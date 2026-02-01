@@ -1,0 +1,15 @@
+[package]
+name = "uwpvfs-payload"
+description = "UWPVFS DLL - injected into UWP processes to hook file system operations for modding"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+retour = { workspace = true }
+thiserror = "2.0.18"
+uwpvfs-shared = { workspace = true }
+windows = { workspace = true }
