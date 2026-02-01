@@ -4,6 +4,7 @@ mod hooks;
 mod uwp;
 
 use std::ffi::c_void;
+use std::panic;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use uwpvfs_shared::IpcClient;
 use windows::Win32::Foundation::HMODULE;
@@ -61,6 +62,30 @@ extern "system" fn vfs_thread(_param: *mut c_void) -> u32 {
             unload_self(1);
         }
     };
+
+    // Set up panic hook to send IPC message on crash
+    panic::set_hook(Box::new(|panic_info| {
+        // Try to send panic info via IPC
+        if let Some(mut ipc) = hooks::get_ipc() {
+            let location = panic_info
+                .location()
+                .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+                .unwrap_or_else(|| "<unknown location>".to_string());
+
+            let message = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+                s.to_string()
+            } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "<unknown panic>".to_string()
+            };
+
+            ipc.push_packet(uwpvfs_shared::Packet::fatal(&format!(
+                "PANIC at {}: {}",
+                location, message
+            )));
+        }
+    }));
 
     // Signal ready
     ipc.push_packet(uwpvfs_shared::Packet::ready());

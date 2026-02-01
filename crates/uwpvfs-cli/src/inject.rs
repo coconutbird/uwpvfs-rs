@@ -48,6 +48,22 @@ pub fn suspend_process(pid: u32) -> Result<()> {
     Ok(())
 }
 
+/// Resume a process by PID using NtResumeProcess
+pub fn resume_process(pid: u32) -> Result<()> {
+    let (_, resume_fn) = get_nt_suspend_resume().ok_or_else(|| Error::from_win32())?;
+
+    unsafe {
+        let handle = OpenProcess(PROCESS_SUSPEND_RESUME, false, pid)?;
+        let status = resume_fn(handle);
+        CloseHandle(handle)?;
+
+        if status != 0 {
+            return Err(Error::from_win32());
+        }
+    }
+    Ok(())
+}
+
 /// Handle to a target process that auto-closes on drop
 pub struct ProcessHandle(HANDLE);
 

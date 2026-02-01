@@ -288,6 +288,22 @@ fn inject_and_hook(pid: u32, dll_path: &std::path::Path, mods_path: &str, verbos
 
     run_message_loop(&mut ipc, &process);
 
+    // Resume the process now that hooks are installed
+    println!("{} Resuming process...", "[INFO]".blue());
+    if let Err(e) = inject::resume_process(pid) {
+        eprintln!("{} Failed to resume process: {}", "[ERROR]".red(), e);
+        return;
+    }
+    println!("{} Process resumed, VFS active", "[OK]".green());
+
+    if verbose {
+        println!(
+            "{} Monitoring traffic (Ctrl+C to exit)...\n",
+            "[INFO]".blue()
+        );
+        run_traffic_loop(&mut ipc, &process);
+    }
+
     println!();
 }
 
@@ -393,6 +409,27 @@ fn run_message_loop(ipc: &mut IpcHost, process: &inject::ProcessHandle) {
             }
             return;
         }
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+/// Traffic monitoring loop - runs after hooks are installed to display file/DLL access
+fn run_traffic_loop(ipc: &mut IpcHost, process: &inject::ProcessHandle) {
+    loop {
+        // Check if target process exited
+        if !process.is_alive() {
+            println!("\n{} Target process exited", "[INFO]".blue());
+            return;
+        }
+
+        // Process and display log packets
+        while let Some(pkt) = ipc.try_read() {
+            display_packet(&pkt);
+        }
+
+        // Acknowledge sync
+        ipc.check_and_ack_sync();
 
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
