@@ -49,6 +49,7 @@ pub(crate) fn log_redirect(func_name: &str, original_path: &str, redirected_path
         Some(c) if c.log_traffic => c,
         _ => return,
     };
+
     let _ = config;
 
     let abs_path = path::normalize_to_absolute(original_path);
@@ -139,6 +140,39 @@ pub fn install(
         hooks_installed += 1;
         ipc.info("  ✓ LdrLoadDll hooked");
 
+        // NtQueryAttributesFile - used to check file existence
+        let nt_query_attributes_file = GetProcAddress(ntdll, s!("NtQueryAttributesFile"))
+            .ok_or(HookError::FunctionNotFound("NtQueryAttributesFile"))?;
+        let nt_query_attributes_file: NtQueryAttributesFileFn =
+            std::mem::transmute(nt_query_attributes_file);
+
+        NtQueryAttributesFileHook
+            .initialize(nt_query_attributes_file, nt_query_attributes_file_detour)
+            .map_err(|e| HookError::InstallFailed(format!("NtQueryAttributesFile: {}", e)))?;
+        NtQueryAttributesFileHook.enable().map_err(|e| {
+            HookError::InstallFailed(format!("NtQueryAttributesFile enable: {}", e))
+        })?;
+        hooks_installed += 1;
+        ipc.info("  ✓ NtQueryAttributesFile hooked");
+
+        // NtQueryFullAttributesFile - extended file existence check
+        let nt_query_full_attributes_file = GetProcAddress(ntdll, s!("NtQueryFullAttributesFile"))
+            .ok_or(HookError::FunctionNotFound("NtQueryFullAttributesFile"))?;
+        let nt_query_full_attributes_file: NtQueryFullAttributesFileFn =
+            std::mem::transmute(nt_query_full_attributes_file);
+
+        NtQueryFullAttributesFileHook
+            .initialize(
+                nt_query_full_attributes_file,
+                nt_query_full_attributes_file_detour,
+            )
+            .map_err(|e| HookError::InstallFailed(format!("NtQueryFullAttributesFile: {}", e)))?;
+        NtQueryFullAttributesFileHook.enable().map_err(|e| {
+            HookError::InstallFailed(format!("NtQueryFullAttributesFile enable: {}", e))
+        })?;
+        hooks_installed += 1;
+        ipc.info("  ✓ NtQueryFullAttributesFile hooked");
+
         ipc.success(&format!(
             "VFS hooks installed successfully ({} hooks)",
             hooks_installed
@@ -159,6 +193,8 @@ pub fn cleanup() {
         let _ = NtCreateFileHook.disable();
         let _ = NtOpenFileHook.disable();
         let _ = LdrLoadDllHook.disable();
+        let _ = NtQueryAttributesFileHook.disable();
+        let _ = NtQueryFullAttributesFileHook.disable();
     }
     guard::cleanup();
 }
