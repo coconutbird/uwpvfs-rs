@@ -198,7 +198,7 @@ pub fn nt_open_file_detour(
     }
 }
 
-/// LdrLoadDll detour - currently disabled (DLL redirection not implemented)
+/// LdrLoadDll detour - DLL redirection disabled (causes crashes due to signature/integrity issues)
 pub fn ldr_load_dll_detour(
     search_path: *const u16,
     dll_characteristics: *mut u32,
@@ -214,7 +214,7 @@ pub fn ldr_load_dll_detour(
         }
     };
 
-    // DLL redirection is currently disabled
+    // DLL redirection disabled - UWP games have integrity checks that cause crashes
     unsafe { LdrLoadDllHook.call(search_path, dll_characteristics, dll_name, base_address) }
 }
 

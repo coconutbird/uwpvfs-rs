@@ -43,6 +43,22 @@ pub fn normalize_to_absolute(path: &str) -> String {
 
 /// Check if a path should be redirected and return the redirected path
 pub fn get_redirected_path(config: &VfsConfig, original_path: &str) -> Option<PathBuf> {
+    get_redirected_path_internal(config, original_path, false)
+}
+
+/// Check if a DLL path should be redirected (allows .dll files)
+/// Currently unused - DLL redirection causes crashes due to UWP integrity checks
+#[allow(dead_code)]
+pub fn get_redirected_path_dll(config: &VfsConfig, original_path: &str) -> Option<PathBuf> {
+    get_redirected_path_internal(config, original_path, true)
+}
+
+/// Internal implementation with option to allow DLLs
+fn get_redirected_path_internal(
+    config: &VfsConfig,
+    original_path: &str,
+    allow_dll: bool,
+) -> Option<PathBuf> {
     // Normalize to absolute DOS path
     let abs_path = normalize_to_absolute(original_path);
 
@@ -51,9 +67,9 @@ pub fn get_redirected_path(config: &VfsConfig, original_path: &str) -> Option<Pa
         return None;
     }
 
-    // Skip DLL and EXE files to avoid integrity check issues
+    // Skip DLL and EXE files to avoid integrity check issues (unless allow_dll is true)
     let path_lower = abs_path.to_lowercase();
-    if path_lower.ends_with(".dll") || path_lower.ends_with(".exe") {
+    if !allow_dll && (path_lower.ends_with(".dll") || path_lower.ends_with(".exe")) {
         return None;
     }
 
