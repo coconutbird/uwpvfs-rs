@@ -6,6 +6,7 @@
 
 mod detours;
 mod guard;
+mod ntapi;
 pub mod path;
 
 use std::path::{Path, PathBuf};
@@ -17,6 +18,10 @@ use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::core::{s, w};
 
 use detours::*;
+use ntapi::{
+    LdrLoadDllFn, NtCreateFileFn, NtOpenFileFn, NtQueryAttributesFileFn,
+    NtQueryFullAttributesFileFn,
+};
 use path::VfsConfig;
 
 /// Error type for hook operations
