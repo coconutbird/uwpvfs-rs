@@ -15,10 +15,21 @@ mod tls {
     static TLS_INDEX: AtomicU32 = AtomicU32::new(TLS_OUT_OF_INDEXES);
 
     /// Initialize TLS slot (call once at startup)
+    /// This is idempotent - calling multiple times is safe
     pub fn init() {
+        // Only allocate if not already initialized
+        if TLS_INDEX.load(Ordering::SeqCst) != TLS_OUT_OF_INDEXES {
+            return;
+        }
         let idx = unsafe { TlsAlloc() };
         if idx != TLS_OUT_OF_INDEXES {
-            TLS_INDEX.store(idx, Ordering::SeqCst);
+            // Use compare_exchange to avoid race conditions
+            let _ = TLS_INDEX.compare_exchange(
+                TLS_OUT_OF_INDEXES,
+                idx,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            );
         }
     }
 
@@ -97,28 +108,40 @@ pub fn cleanup() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Mutex to serialize tests since they share global TLS state
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_guard_first_entry_succeeds() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         init();
+        // Ensure clean state
+        tls::set_in_hook(false);
+
         let guard = ReentrancyGuard::try_enter();
         assert!(guard.is_some(), "First entry should succeed");
         drop(guard);
-        cleanup();
     }
 
     #[test]
     fn test_guard_blocks_reentry() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         init();
+        tls::set_in_hook(false);
+
         let _guard1 = ReentrancyGuard::try_enter().expect("First entry should succeed");
         let guard2 = ReentrancyGuard::try_enter();
         assert!(guard2.is_none(), "Nested entry should be blocked");
-        cleanup();
     }
 
     #[test]
     fn test_guard_raii_resets_on_drop() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         init();
+        tls::set_in_hook(false);
+
         {
             let _guard = ReentrancyGuard::try_enter().expect("First entry should succeed");
             // Guard is held here
@@ -129,23 +152,27 @@ mod tests {
             guard.is_some(),
             "Should be able to enter after guard is dropped"
         );
-        cleanup();
     }
 
     #[test]
     fn test_guard_multiple_enter_exit_cycles() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         init();
+        tls::set_in_hook(false);
+
         for i in 0..5 {
             let guard = ReentrancyGuard::try_enter();
             assert!(guard.is_some(), "Entry {} should succeed", i);
             drop(guard);
         }
-        cleanup();
     }
 
     #[test]
     fn test_guard_thread_local_isolation() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         init();
+        tls::set_in_hook(false);
+
         // Hold guard in main thread
         let _guard = ReentrancyGuard::try_enter().expect("Main thread entry should succeed");
 
@@ -160,12 +187,14 @@ mod tests {
             other_thread_entered,
             "Other thread should be able to enter independently"
         );
-        cleanup();
     }
 
     #[test]
     fn test_guard_deeply_nested_blocks() {
+        let _lock = TEST_MUTEX.lock().unwrap();
         init();
+        tls::set_in_hook(false);
+
         let guard1 = ReentrancyGuard::try_enter();
         assert!(guard1.is_some());
 
@@ -180,6 +209,5 @@ mod tests {
         // After dropping the first guard, should be able to enter again
         let guard4 = ReentrancyGuard::try_enter();
         assert!(guard4.is_some());
-        cleanup();
     }
 }
