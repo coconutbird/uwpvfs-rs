@@ -42,6 +42,10 @@ static_detour! {
     pub static NtQueryFullAttributesFileHook: unsafe extern "system" fn(
         POBJECT_ATTRIBUTES, *mut c_void
     ) -> NTSTATUS;
+
+    pub static NtCreateSectionHook: unsafe extern "system" fn(
+        *mut HANDLE, u32, POBJECT_ATTRIBUTES, PLARGE_INTEGER, u32, u32, HANDLE
+    ) -> NTSTATUS;
 }
 
 // =============================================================================
@@ -274,4 +278,74 @@ pub fn nt_query_full_attributes_file_detour(
     }
 
     unsafe { NtQueryFullAttributesFileHook.call(object_attributes, file_information) }
+}
+
+/// NtCreateSection detour - intercepts memory-mapped file creation
+///
+/// NtCreateSection can be called with either:
+/// - A FileHandle from NtCreateFile/NtOpenFile (already redirected by those hooks)
+/// - An ObjectAttributes with a file path (needs redirection here)
+#[allow(clippy::too_many_arguments)]
+pub fn nt_create_section_detour(
+    section_handle: *mut HANDLE,
+    desired_access: u32,
+    object_attributes: POBJECT_ATTRIBUTES,
+    maximum_size: PLARGE_INTEGER,
+    section_page_protection: u32,
+    allocation_attributes: u32,
+    file_handle: HANDLE,
+) -> NTSTATUS {
+    let _guard = match ReentrancyGuard::try_enter() {
+        Some(g) => g,
+        None => {
+            return unsafe {
+                NtCreateSectionHook.call(
+                    section_handle,
+                    desired_access,
+                    object_attributes,
+                    maximum_size,
+                    section_page_protection,
+                    allocation_attributes,
+                    file_handle,
+                )
+            };
+        }
+    };
+
+    // Only redirect if ObjectAttributes contains a path (FileHandle would be NULL/invalid)
+    // If FileHandle is provided, the file was already opened via NtCreateFile/NtOpenFile
+    // which would have done the redirection
+    if !object_attributes.is_null()
+        && let Some((original, redirected)) = try_get_redirect(object_attributes)
+    {
+        log_redirect("NtCreateSection", &original, &redirected);
+
+        let (_buf, mut unicode) = create_unicode_string(&redirected);
+        let attr = unsafe { &*(object_attributes as *const ObjectAttributes) };
+        let mut new_attr = create_redirected_object_attributes(attr, &mut unicode);
+
+        return unsafe {
+            NtCreateSectionHook.call(
+                section_handle,
+                desired_access,
+                &mut new_attr as *mut _ as POBJECT_ATTRIBUTES,
+                maximum_size,
+                section_page_protection,
+                allocation_attributes,
+                file_handle,
+            )
+        };
+    }
+
+    unsafe {
+        NtCreateSectionHook.call(
+            section_handle,
+            desired_access,
+            object_attributes,
+            maximum_size,
+            section_page_protection,
+            allocation_attributes,
+            file_handle,
+        )
+    }
 }

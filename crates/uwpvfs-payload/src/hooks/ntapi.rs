@@ -73,6 +73,17 @@ pub type NtQueryFullAttributesFileFn = unsafe extern "system" fn(
     FileInformation: *mut c_void,
 ) -> NTSTATUS;
 
+/// NtCreateSection - Creates a section object (memory-mapped file)
+pub type NtCreateSectionFn = unsafe extern "system" fn(
+    SectionHandle: *mut HANDLE,
+    DesiredAccess: u32,
+    ObjectAttributes: POBJECT_ATTRIBUTES,
+    MaximumSize: PLARGE_INTEGER,
+    SectionPageProtection: u32,
+    AllocationAttributes: u32,
+    FileHandle: HANDLE,
+) -> NTSTATUS;
+
 // =============================================================================
 // Structures
 // =============================================================================

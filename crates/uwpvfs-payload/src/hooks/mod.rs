@@ -19,7 +19,7 @@ use windows::core::{s, w};
 
 use detours::*;
 use ntapi::{
-    LdrLoadDllFn, NtCreateFileFn, NtOpenFileFn, NtQueryAttributesFileFn,
+    LdrLoadDllFn, NtCreateFileFn, NtCreateSectionFn, NtOpenFileFn, NtQueryAttributesFileFn,
     NtQueryFullAttributesFileFn,
 };
 use path::VfsConfig;
@@ -178,6 +178,20 @@ pub fn install(
         hooks_installed += 1;
         ipc.info("  ✓ NtQueryFullAttributesFile hooked");
 
+        // NtCreateSection - memory-mapped file creation
+        let nt_create_section = GetProcAddress(ntdll, s!("NtCreateSection"))
+            .ok_or(HookError::FunctionNotFound("NtCreateSection"))?;
+        let nt_create_section: NtCreateSectionFn = std::mem::transmute(nt_create_section);
+
+        NtCreateSectionHook
+            .initialize(nt_create_section, nt_create_section_detour)
+            .map_err(|e| HookError::InstallFailed(format!("NtCreateSection: {}", e)))?;
+        NtCreateSectionHook
+            .enable()
+            .map_err(|e| HookError::InstallFailed(format!("NtCreateSection enable: {}", e)))?;
+        hooks_installed += 1;
+        ipc.info("  ✓ NtCreateSection hooked");
+
         ipc.success(&format!(
             "VFS hooks installed successfully ({} hooks)",
             hooks_installed
@@ -200,6 +214,7 @@ pub fn cleanup() {
         let _ = LdrLoadDllHook.disable();
         let _ = NtQueryAttributesFileHook.disable();
         let _ = NtQueryFullAttributesFileHook.disable();
+        let _ = NtCreateSectionHook.disable();
     }
     guard::cleanup();
 }
