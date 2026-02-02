@@ -93,3 +93,93 @@ pub fn init() {
 pub fn cleanup() {
     tls::cleanup();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_guard_first_entry_succeeds() {
+        init();
+        let guard = ReentrancyGuard::try_enter();
+        assert!(guard.is_some(), "First entry should succeed");
+        drop(guard);
+        cleanup();
+    }
+
+    #[test]
+    fn test_guard_blocks_reentry() {
+        init();
+        let _guard1 = ReentrancyGuard::try_enter().expect("First entry should succeed");
+        let guard2 = ReentrancyGuard::try_enter();
+        assert!(guard2.is_none(), "Nested entry should be blocked");
+        cleanup();
+    }
+
+    #[test]
+    fn test_guard_raii_resets_on_drop() {
+        init();
+        {
+            let _guard = ReentrancyGuard::try_enter().expect("First entry should succeed");
+            // Guard is held here
+        }
+        // After drop, should be able to enter again
+        let guard = ReentrancyGuard::try_enter();
+        assert!(
+            guard.is_some(),
+            "Should be able to enter after guard is dropped"
+        );
+        cleanup();
+    }
+
+    #[test]
+    fn test_guard_multiple_enter_exit_cycles() {
+        init();
+        for i in 0..5 {
+            let guard = ReentrancyGuard::try_enter();
+            assert!(guard.is_some(), "Entry {} should succeed", i);
+            drop(guard);
+        }
+        cleanup();
+    }
+
+    #[test]
+    fn test_guard_thread_local_isolation() {
+        init();
+        // Hold guard in main thread
+        let _guard = ReentrancyGuard::try_enter().expect("Main thread entry should succeed");
+
+        // Different thread should be able to enter independently
+        let handle = std::thread::spawn(|| {
+            // Note: TLS is per-thread, so this thread has its own slot value
+            ReentrancyGuard::try_enter().is_some()
+        });
+
+        let other_thread_entered = handle.join().expect("Thread should not panic");
+        assert!(
+            other_thread_entered,
+            "Other thread should be able to enter independently"
+        );
+        cleanup();
+    }
+
+    #[test]
+    fn test_guard_deeply_nested_blocks() {
+        init();
+        let guard1 = ReentrancyGuard::try_enter();
+        assert!(guard1.is_some());
+
+        let guard2 = ReentrancyGuard::try_enter();
+        assert!(guard2.is_none());
+
+        let guard3 = ReentrancyGuard::try_enter();
+        assert!(guard3.is_none());
+
+        drop(guard1);
+
+        // After dropping the first guard, should be able to enter again
+        let guard4 = ReentrancyGuard::try_enter();
+        assert!(guard4.is_some());
+        cleanup();
+    }
+}
