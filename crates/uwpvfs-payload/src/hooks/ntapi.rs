@@ -159,7 +159,20 @@ pub unsafe fn get_path_from_object_attributes(obj_attr: POBJECT_ATTRIBUTES) -> O
         }
 
         let slice = std::slice::from_raw_parts(unicode_str.Buffer.as_ptr(), len);
-        Some(String::from_utf16_lossy(slice))
+        let s = String::from_utf16_lossy(slice);
+
+        // Trim any embedded or trailing null characters that may be present
+        // Some Windows APIs include nulls in the UNICODE_STRING buffer
+        let s = s.trim_end_matches('\0').to_string();
+
+        // Also handle embedded nulls by truncating at the first null
+        let s = if let Some(null_pos) = s.find('\0') {
+            s[..null_pos].to_string()
+        } else {
+            s
+        };
+
+        Some(s)
     }
 }
 

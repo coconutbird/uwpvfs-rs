@@ -29,8 +29,14 @@ macro_rules! get_package_string {
             if result.0 != 0 {
                 Err(Error::from(windows::core::HRESULT::from_win32(result.0)))
             } else {
-                // Convert to String (exclude null terminator)
-                Ok(String::from_utf16_lossy(&buffer[..length as usize - 1]))
+                // Find the actual string length (up to first null)
+                let actual_len = buffer
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(length as usize);
+                // Convert to String, trimming any null characters
+                let s = String::from_utf16_lossy(&buffer[..actual_len]);
+                Ok(s.trim_end_matches('\0').to_string())
             }
         }
     }};

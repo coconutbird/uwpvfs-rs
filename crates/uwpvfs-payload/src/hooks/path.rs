@@ -53,6 +53,12 @@ pub fn get_redirected_path_dll(config: &VfsConfig, original_path: &str) -> Optio
     get_redirected_path_internal(config, original_path, true)
 }
 
+/// Normalize path separators to backslashes and remove trailing slashes
+fn normalize_path_separators(path: &str) -> String {
+    let normalized = path.replace('/', "\\");
+    normalized.trim_end_matches('\\').to_string()
+}
+
 /// Internal implementation with option to allow DLLs
 fn get_redirected_path_internal(
     config: &VfsConfig,
@@ -67,20 +73,39 @@ fn get_redirected_path_internal(
         return None;
     }
 
-    // Skip DLL and EXE files to avoid integrity check issues (unless allow_dll is true)
+    // Normalize path separators for consistent comparison
+    let abs_path = normalize_path_separators(&abs_path);
     let path_lower = abs_path.to_lowercase();
+
+    // Skip DLL and EXE files to avoid integrity check issues (unless allow_dll is true)
     if !allow_dll && (path_lower.ends_with(".dll") || path_lower.ends_with(".exe")) {
         return None;
     }
 
     // Check if this path is within the game directory
-    let game_path_str = config.game_path.to_string_lossy();
-    if !path_lower.starts_with(&game_path_str.to_lowercase()) {
+    // Normalize game path too for consistent comparison
+    let game_path_str = normalize_path_separators(&config.game_path.to_string_lossy());
+    let game_path_lower = game_path_str.to_lowercase();
+
+    // Need to check with trailing backslash to avoid matching partial directory names
+    // e.g., "C:\Game" should not match "C:\GameData\file.txt"
+    let game_path_prefix = if game_path_lower.ends_with('\\') {
+        game_path_lower.clone()
+    } else {
+        format!("{}\\", game_path_lower)
+    };
+
+    if !path_lower.starts_with(&game_path_prefix) && path_lower != game_path_lower {
         return None;
     }
 
     // Get relative path from game directory
-    let relative = &abs_path[game_path_str.len()..];
+    let relative = if path_lower == game_path_lower {
+        ""
+    } else {
+        // Use the prefix length (with backslash) to get relative path
+        &abs_path[game_path_prefix.len().min(abs_path.len())..]
+    };
     let relative = relative.trim_start_matches(['\\', '/']);
 
     // Check if the modded file exists

@@ -5,7 +5,6 @@
 
 /// Thread-local storage key for reentrancy detection
 /// We use Windows TLS directly for reliability in hook contexts
-#[cfg(target_os = "windows")]
 mod tls {
     use std::sync::atomic::{AtomicU32, Ordering};
     use windows::Win32::System::Threading::{
