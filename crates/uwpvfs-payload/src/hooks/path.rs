@@ -16,8 +16,8 @@ pub struct VfsConfig {
 /// Handles NT paths (\??\C:\...), device paths, and relative paths
 pub fn normalize_to_absolute(path: &str) -> String {
     // Strip NT path prefix if present
-    let dos_path = if path.starts_with("\\??\\") {
-        &path[4..]
+    let dos_path = if let Some(stripped) = path.strip_prefix("\\??\\") {
+        stripped
     } else if path.starts_with("\\Device\\") {
         // Can't easily convert device paths, return as-is
         return path.to_string();

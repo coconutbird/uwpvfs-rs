@@ -39,6 +39,7 @@ macro_rules! get_package_string {
 /// Information about the current UWP package (the process we're injected into)
 #[derive(Debug, Clone)]
 pub struct CurrentPackage {
+    #[allow(dead_code)]
     pub family_name: String,
     pub full_name: String,
     pub package_path: PathBuf,

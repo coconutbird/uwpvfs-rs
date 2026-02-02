@@ -59,15 +59,15 @@ pub(crate) fn log_redirect(func_name: &str, original_path: &str, redirected_path
 
     let abs_path = path::normalize_to_absolute(original_path);
 
-    if let Some(ipc_mutex) = IPC_CLIENT.get() {
-        if let Ok(mut ipc) = ipc_mutex.lock() {
-            ipc.info(&format!(
-                "[{}] {} -> {}",
-                func_name,
-                abs_path,
-                redirected_path.display()
-            ));
-        }
+    if let Some(ipc_mutex) = IPC_CLIENT.get()
+        && let Ok(mut ipc) = ipc_mutex.lock()
+    {
+        ipc.info(&format!(
+            "[{}] {} -> {}",
+            func_name,
+            abs_path,
+            redirected_path.display()
+        ));
     }
 }
 

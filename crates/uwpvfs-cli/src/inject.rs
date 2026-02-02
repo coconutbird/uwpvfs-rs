@@ -23,18 +23,22 @@ type NtSuspendProcessFn = unsafe extern "system" fn(HANDLE) -> i32;
 type NtResumeProcessFn = unsafe extern "system" fn(HANDLE) -> i32;
 
 /// Get NtSuspendProcess and NtResumeProcess from ntdll
+#[allow(clippy::missing_transmute_annotations)]
 fn get_nt_suspend_resume() -> Option<(NtSuspendProcessFn, NtResumeProcessFn)> {
     unsafe {
         let ntdll = GetModuleHandleW(w!("ntdll.dll")).ok()?;
         let suspend = GetProcAddress(ntdll, s!("NtSuspendProcess"))?;
         let resume = GetProcAddress(ntdll, s!("NtResumeProcess"))?;
-        Some((std::mem::transmute(suspend), std::mem::transmute(resume)))
+        Some((
+            std::mem::transmute::<_, NtSuspendProcessFn>(suspend),
+            std::mem::transmute::<_, NtResumeProcessFn>(resume),
+        ))
     }
 }
 
 /// Suspend a process by PID using NtSuspendProcess
 pub fn suspend_process(pid: u32) -> Result<()> {
-    let (suspend_fn, _) = get_nt_suspend_resume().ok_or_else(|| Error::from_win32())?;
+    let (suspend_fn, _) = get_nt_suspend_resume().ok_or_else(Error::from_win32)?;
 
     unsafe {
         let handle = OpenProcess(PROCESS_SUSPEND_RESUME, false, pid)?;
@@ -50,7 +54,7 @@ pub fn suspend_process(pid: u32) -> Result<()> {
 
 /// Resume a process by PID using NtResumeProcess
 pub fn resume_process(pid: u32) -> Result<()> {
-    let (_, resume_fn) = get_nt_suspend_resume().ok_or_else(|| Error::from_win32())?;
+    let (_, resume_fn) = get_nt_suspend_resume().ok_or_else(Error::from_win32)?;
 
     unsafe {
         let handle = OpenProcess(PROCESS_SUSPEND_RESUME, false, pid)?;

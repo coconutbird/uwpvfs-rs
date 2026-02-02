@@ -39,7 +39,7 @@ mod tls {
             return;
         }
         let ptr = if value {
-            1usize as *mut _
+            std::ptr::dangling_mut()
         } else {
             std::ptr::null_mut()
         };

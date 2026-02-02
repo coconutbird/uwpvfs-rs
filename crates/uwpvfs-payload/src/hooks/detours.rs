@@ -62,6 +62,7 @@ fn try_get_redirect(object_attributes: POBJECT_ATTRIBUTES) -> Option<(String, Pa
 // =============================================================================
 
 /// NtCreateFile detour - intercepts file creation/opening
+#[allow(clippy::too_many_arguments)]
 pub fn nt_create_file_detour(
     file_handle: *mut HANDLE,
     desired_access: u32,

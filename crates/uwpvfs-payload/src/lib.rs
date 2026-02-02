@@ -148,7 +148,10 @@ extern "system" fn vfs_thread(_param: *mut c_void) -> u32 {
     let log_traffic = ipc.get_log_traffic();
 
     // Install the VFS hooks (this consumes the IPC client)
-    let exit_code = match hooks::install(
+
+    // Don't unload - keep DLL loaded to maintain hooks
+    // The hooks will remain active for the lifetime of the process
+    match hooks::install(
         ipc,
         &package.package_path.to_string_lossy(),
         &mods_path.to_string_lossy(),
@@ -177,11 +180,7 @@ extern "system" fn vfs_thread(_param: *mut c_void) -> u32 {
             }
             1
         }
-    };
-
-    // Don't unload - keep DLL loaded to maintain hooks
-    // The hooks will remain active for the lifetime of the process
-    exit_code
+    }
 }
 
 /// Unload the DLL and exit the current thread

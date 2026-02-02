@@ -109,7 +109,7 @@ pub unsafe fn get_path_from_object_attributes(obj_attr: POBJECT_ATTRIBUTES) -> O
         }
 
         // Check pointer alignment (OBJECT_ATTRIBUTES should be 8-byte aligned on x64)
-        if (obj_attr as usize) % 8 != 0 {
+        if !(obj_attr as usize).is_multiple_of(8) {
             return None;
         }
 
@@ -125,7 +125,7 @@ pub unsafe fn get_path_from_object_attributes(obj_attr: POBJECT_ATTRIBUTES) -> O
         }
 
         // Check pointer alignment for UNICODE_STRING
-        if (attr.object_name as usize) % 2 != 0 {
+        if !(attr.object_name as usize).is_multiple_of(2) {
             return None;
         }
 
@@ -136,7 +136,7 @@ pub unsafe fn get_path_from_object_attributes(obj_attr: POBJECT_ATTRIBUTES) -> O
 
         // Check buffer pointer - reject obviously invalid addresses
         let buf_addr = unicode_str.Buffer.as_ptr() as usize;
-        if buf_addr < 0x10000 || buf_addr % 2 != 0 {
+        if buf_addr < 0x10000 || !buf_addr.is_multiple_of(2) {
             return None;
         }
 
