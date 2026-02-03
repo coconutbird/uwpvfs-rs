@@ -400,7 +400,9 @@ impl IpcClient {
             .iter()
             .position(|&c| c == 0)
             .unwrap_or(path_slice.len());
-        String::from_utf16_lossy(&path_slice[..len])
+        let s = String::from_utf16_lossy(&path_slice[..len]);
+        // Trim any embedded or trailing null characters
+        s.trim_end_matches('\0').to_string()
     }
 
     /// Check if traffic logging is enabled
