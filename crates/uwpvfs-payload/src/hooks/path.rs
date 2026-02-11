@@ -22,16 +22,7 @@ pub struct VfsConfig {
 /// Check if a path should be hidden (return file not found)
 /// Only hides original game files - if a mod file exists at that path, it won't be hidden
 pub fn should_hide_path(config: &VfsConfig, original_path: &str) -> bool {
-    // Skip named pipe paths
-    if original_path.starts_with("pipe\\")
-        || original_path.starts_with("pipe/")
-        || original_path.contains("\\pipe\\")
-        || original_path.contains("/pipe/")
-    {
-        return false;
-    }
-
-    // Normalize to absolute DOS path
+    // Normalize to absolute DOS path (also filters out named pipes)
     let abs_path = normalize_to_absolute(original_path);
 
     // Skip device paths we couldn't convert
@@ -69,6 +60,13 @@ pub fn should_hide_path(config: &VfsConfig, original_path: &str) -> bool {
 /// Convert a path to absolute DOS path
 /// Handles NT paths (\??\C:\...), device paths, and relative paths
 pub fn normalize_to_absolute(path: &str) -> String {
+    // Skip named pipes: \\.\pipe\... or \??\pipe\... (NT format)
+    // These are IPC mechanisms, not filesystem paths
+    let path_lower = path.to_lowercase();
+    if path_lower.starts_with("\\\\.\\pipe\\") || path_lower.starts_with("\\??\\pipe\\") {
+        return path.to_string();
+    }
+
     // Strip NT path prefix if present
     let dos_path = if let Some(stripped) = path.strip_prefix("\\??\\") {
         stripped
@@ -125,21 +123,14 @@ fn get_redirected_path_internal(
     allow_dll: bool,
     for_write: bool,
 ) -> Option<PathBuf> {
-    // Skip named pipe paths (e.g., "pipe\..." or "\\.\pipe\...")
-    // These are IPC mechanisms, not real files
-    if original_path.starts_with("pipe\\")
-        || original_path.starts_with("pipe/")
-        || original_path.contains("\\pipe\\")
-        || original_path.contains("/pipe/")
-    {
-        return None;
-    }
-
-    // Normalize to absolute DOS path
+    // Normalize to absolute DOS path (also filters out named pipes)
     let abs_path = normalize_to_absolute(original_path);
 
-    // Skip device paths we couldn't convert
-    if abs_path.starts_with("\\Device\\") {
+    // Skip device paths and named pipes (returned unchanged by normalize_to_absolute)
+    if abs_path.starts_with("\\Device\\")
+        || abs_path.starts_with("\\\\.\\")
+        || abs_path.starts_with("\\??\\pipe\\")
+    {
         return None;
     }
 
@@ -440,10 +431,10 @@ mod tests {
         fs::create_dir_all(&game_path).unwrap();
         fs::create_dir_all(&mods_path).unwrap();
 
-        // Create a mod file in a "pipe" directory (shouldn't matter)
+        // Create a mod file in a "pipe" subdirectory
         let pipe_dir = mods_path.join("pipe");
         fs::create_dir_all(&pipe_dir).unwrap();
-        fs::write(pipe_dir.join("NvMessageBus"), "fake").unwrap();
+        fs::write(pipe_dir.join("texture.png"), "fake texture").unwrap();
 
         let config = VfsConfig {
             game_path: game_path.clone(),
@@ -453,17 +444,31 @@ mod tests {
             hide: VfsHide::empty(),
         };
 
-        // Named pipe paths should be skipped (relative path starting with pipe\)
-        let result = get_redirected_path(&config, "pipe\\NvMessageBus");
-        assert!(result.is_none(), "Expected no redirect for named pipe paths");
+        // Named pipes in NT format (\??\pipe\...) should be skipped
+        let result = get_redirected_path(&config, "\\??\\pipe\\NvMessageBus");
+        assert!(result.is_none(), "Expected no redirect for NT pipe paths");
 
-        // Also test with forward slash
-        let result = get_redirected_path(&config, "pipe/NvMessageBus");
-        assert!(result.is_none(), "Expected no redirect for named pipe paths (forward slash)");
+        // Named pipes in Win32 format (\\.\pipe\...) should be skipped
+        let result = get_redirected_path(&config, "\\\\.\\pipe\\NvMessageBus");
+        assert!(
+            result.is_none(),
+            "Expected no redirect for Win32 pipe paths"
+        );
 
-        // Test path containing \pipe\ in the middle
-        let result = get_redirected_path(&config, "C:\\some\\pipe\\path");
-        assert!(result.is_none(), "Expected no redirect for paths containing \\pipe\\");
+        // Case insensitive
+        let result = get_redirected_path(&config, "\\??\\PIPE\\SomePipe");
+        assert!(
+            result.is_none(),
+            "Expected no redirect for pipe paths (uppercase)"
+        );
+
+        // But a real file in a "pipe" subdirectory of the game SHOULD be redirected
+        let game_pipe_file = game_path.join("pipe\\texture.png");
+        let result = get_redirected_path(&config, &game_pipe_file.to_string_lossy());
+        assert!(
+            result.is_some(),
+            "Expected redirect for real file in pipe subdirectory"
+        );
     }
 
     #[test]
