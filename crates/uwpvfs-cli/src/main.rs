@@ -2,11 +2,9 @@
 
 mod inject;
 mod package;
-mod process;
 
 use clap::Parser;
 use colored::Colorize;
-use std::io::{self, Write};
 use std::path::PathBuf;
 use uwpvfs_shared::{IpcHost, LogLevel, Packet, PacketId};
 
@@ -15,11 +13,7 @@ use uwpvfs_shared::{IpcHost, LogLevel, Packet, PacketId};
 #[command(about = "UWP Virtual File System - enables modding of sandboxed UWP applications")]
 #[command(version)]
 struct Args {
-    /// Process name to inject into (e.g., HaloWars2_WinAppDX12Final.exe)
-    #[arg(short, long)]
-    name: Option<String>,
-
-    /// Process ID to inject into
+    /// Process ID to inject into (for already running processes)
     #[arg(short, long)]
     pid: Option<u32>,
 
@@ -61,45 +55,23 @@ fn main() {
         return;
     }
 
-    // Get DLL path (same directory as exe)
-    let dll_path = match get_dll_path() {
-        Some(p) => p,
-        None => return,
-    };
-
-    // Determine target process
-    let target = if args.pid.is_some() || args.name.is_some() {
-        match find_process(args.pid, args.name.as_deref()) {
-            Some(p) => p,
-            None => {
-                if let Some(pid) = args.pid {
-                    eprintln!("{} No UWP process found with PID: {}", "[ERROR]".red(), pid);
-                } else if let Some(ref name) = args.name {
-                    eprintln!(
-                        "{} No UWP process found matching: {}",
-                        "[ERROR]".red(),
-                        name
-                    );
-                }
-                return;
-            }
-        }
-    } else {
-        // Interactive mode
-        match select_process_interactive() {
+    // Handle --pid flag (inject into running process by PID)
+    if let Some(pid) = args.pid {
+        let dll_path = match get_dll_path() {
             Some(p) => p,
             None => return,
-        }
-    };
+        };
+        println!("{} Injecting into PID: {}", "[INFO]".blue(), pid);
+        inject_and_hook(pid, &dll_path, mods_folder, verbose);
+        return;
+    }
 
-    println!(
-        "\n{} Selected: {} (PID: {})",
-        "[INFO]".blue(),
-        target.name,
-        target.pid
+    // No valid command provided - show help
+    eprintln!(
+        "{} No action specified. Use --package, --pid, or --list.",
+        "[ERROR]".red()
     );
-
-    inject_and_hook(target.pid, &dll_path, mods_folder, verbose);
+    eprintln!("Run with --help for usage information.");
 }
 
 fn print_banner() {
@@ -305,71 +277,6 @@ fn inject_and_hook(pid: u32, dll_path: &std::path::Path, mods_path: &str, verbos
     }
 
     println!();
-}
-
-fn find_process(pid: Option<u32>, name: Option<&str>) -> Option<process::ProcessInfo> {
-    let processes = process::list_uwp_processes().ok()?;
-
-    if let Some(pid) = pid {
-        processes.into_iter().find(|p| p.pid == pid)
-    } else if let Some(name) = name {
-        let name_lower = name.to_lowercase();
-        processes
-            .into_iter()
-            .find(|p| p.name.to_lowercase().contains(&name_lower))
-    } else {
-        None
-    }
-}
-
-fn select_process_interactive() -> Option<process::ProcessInfo> {
-    println!("{} Scanning for UWP processes...", "[INFO]".blue());
-    let processes = match process::list_uwp_processes() {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("{} Failed to list processes: {}", "[ERROR]".red(), e);
-            return None;
-        }
-    };
-
-    if processes.is_empty() {
-        println!("{} No UWP processes found.", "[WARN]".yellow());
-
-        return None;
-    }
-
-    // Display process list
-    println!(
-        "\n{} Found {} UWP processes:\n",
-        "[OK]".green(),
-        processes.len()
-    );
-    for (i, proc) in processes.iter().enumerate() {
-        println!("  [{}] {} (PID: {})", i + 1, proc.name.cyan(), proc.pid);
-    }
-
-    // Get user selection
-    print!("\nEnter process number (or 0 to exit): ");
-    let _ = io::stdout().flush();
-
-    let mut input = String::new();
-    if io::stdin().read_line(&mut input).is_err() {
-        return None;
-    }
-
-    let selection: usize = match input.trim().parse() {
-        Ok(n) => n,
-        Err(_) => {
-            eprintln!("{} Invalid input", "[ERROR]".red());
-            return None;
-        }
-    };
-
-    if selection == 0 || selection > processes.len() {
-        return None;
-    }
-
-    Some(processes.into_iter().nth(selection - 1).unwrap())
 }
 
 /// Main message loop - displays packets and waits for hooks to be installed

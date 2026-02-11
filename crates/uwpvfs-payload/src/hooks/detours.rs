@@ -82,9 +82,7 @@ fn try_get_redirect(
     let redirected_path = get_redirected_path_ex(config, &original_path, for_write)?;
 
     // For writes, ensure parent directory exists
-    if for_write
-        && let Some(parent) = redirected_path.parent()
-    {
+    if for_write && let Some(parent) = redirected_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
 
