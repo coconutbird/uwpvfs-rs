@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::vfshide::VfsHide;
 use crate::vfsignore::VfsIgnore;
 
 /// VFS configuration for path redirection
@@ -14,6 +15,38 @@ pub struct VfsConfig {
     pub log_traffic: bool,
     /// Ignore patterns loaded from .vfsignore
     pub ignore: VfsIgnore,
+    /// Hide patterns loaded from .vfshide
+    pub hide: VfsHide,
+}
+
+/// Check if a path should be hidden (return file not found)
+pub fn should_hide_path(config: &VfsConfig, original_path: &str) -> bool {
+    // Normalize to absolute DOS path
+    let abs_path = normalize_to_absolute(original_path);
+
+    // Skip device paths we couldn't convert
+    if abs_path.starts_with("\\Device\\") {
+        return false;
+    }
+
+    // Normalize path separators for consistent comparison
+    let abs_path = normalize_path_separators(&abs_path);
+    let path_lower = abs_path.to_lowercase();
+
+    // Normalize game path
+    let game_path_str = normalize_path_separators(&config.game_path.to_string_lossy());
+    let game_path_lower = game_path_str.to_lowercase();
+
+    // Check if path is within game directory
+    if !path_lower.starts_with(&game_path_lower) {
+        return false;
+    }
+
+    // Extract relative path
+    let relative = &abs_path[game_path_str.len()..].trim_start_matches('\\');
+
+    // Check if relative path matches any hide patterns
+    config.hide.is_hidden(relative)
 }
 
 /// Convert a path to absolute DOS path
@@ -134,6 +167,7 @@ pub fn to_nt_path(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vfshide::VfsHide;
     use std::fs;
     use tempfile::TempDir;
 
@@ -203,6 +237,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
         };
 
         // Request for game file should redirect to mod
@@ -228,6 +263,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
         };
 
         let game_file = game_path.join("data.pak");
@@ -253,6 +289,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
         };
 
         // Path outside game directory should not redirect
@@ -283,6 +320,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
         };
 
         let game_dll = game_path.join("plugin.dll");
@@ -309,6 +347,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
         };
 
         let game_exe = game_path.join("game.exe");
@@ -331,6 +370,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
         };
 
         // Device paths should be skipped
@@ -357,6 +397,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
         };
 
         // NT path format should work
@@ -393,6 +434,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore,
+            hide: VfsHide::empty(),
         };
 
         // Texture should be redirected (not ignored)
@@ -427,6 +469,7 @@ mod tests {
             mods_path: mods_path.clone(),
             log_traffic: false,
             ignore,
+            hide: VfsHide::empty(),
         };
 
         // .pak should be redirected

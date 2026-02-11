@@ -14,8 +14,8 @@ use super::ntapi::{
     ObjectAttributes, PIO_STATUS_BLOCK, PLARGE_INTEGER, POBJECT_ATTRIBUTES,
     create_redirected_object_attributes, create_unicode_string, get_path_from_object_attributes,
 };
-use super::path::get_redirected_path;
-use super::{get_config, log_redirect};
+use super::path::{get_redirected_path, should_hide_path};
+use super::{get_config, log_hide, log_redirect};
 
 // =============================================================================
 // Static Detours
@@ -49,6 +49,13 @@ static_detour! {
 }
 
 // =============================================================================
+// Constants
+// =============================================================================
+
+/// NTSTATUS code for "object name not found" (file/directory doesn't exist)
+const STATUS_OBJECT_NAME_NOT_FOUND: NTSTATUS = NTSTATUS(0xC0000034_u32 as i32);
+
+// =============================================================================
 // Redirection Helper
 // =============================================================================
 
@@ -59,6 +66,18 @@ fn try_get_redirect(object_attributes: POBJECT_ATTRIBUTES) -> Option<(String, Pa
     let original_path = unsafe { get_path_from_object_attributes(object_attributes)? };
     let redirected_path = get_redirected_path(config, &original_path)?;
     Some((original_path, redirected_path))
+}
+
+/// Checks if the file at the given OBJECT_ATTRIBUTES should be hidden.
+/// Returns Some(original_path) if the file should be hidden, None otherwise.
+fn try_get_hidden(object_attributes: POBJECT_ATTRIBUTES) -> Option<String> {
+    let config = get_config()?;
+    let original_path = unsafe { get_path_from_object_attributes(object_attributes)? };
+    if should_hide_path(config, &original_path) {
+        Some(original_path)
+    } else {
+        None
+    }
 }
 
 // =============================================================================
@@ -100,6 +119,12 @@ pub fn nt_create_file_detour(
             };
         }
     };
+
+    // Check if file should be hidden (return "file not found")
+    if let Some(original) = try_get_hidden(object_attributes) {
+        log_hide("NtCreateFile", &original);
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
 
     if let Some((original, redirected)) = try_get_redirect(object_attributes) {
         log_redirect("NtCreateFile", &original, &redirected);
@@ -167,6 +192,12 @@ pub fn nt_open_file_detour(
         }
     };
 
+    // Check if file should be hidden (return "file not found")
+    if let Some(original) = try_get_hidden(object_attributes) {
+        log_hide("NtOpenFile", &original);
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
     if let Some((original, redirected)) = try_get_redirect(object_attributes) {
         log_redirect("NtOpenFile", &original, &redirected);
 
@@ -230,6 +261,12 @@ pub fn nt_query_attributes_file_detour(
         }
     };
 
+    // Check if file should be hidden (return "file not found")
+    if let Some(original) = try_get_hidden(object_attributes) {
+        log_hide("NtQueryAttributesFile", &original);
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
+
     if let Some((original, redirected)) = try_get_redirect(object_attributes) {
         log_redirect("NtQueryAttributesFile", &original, &redirected);
 
@@ -261,6 +298,12 @@ pub fn nt_query_full_attributes_file_detour(
             };
         }
     };
+
+    // Check if file should be hidden (return "file not found")
+    if let Some(original) = try_get_hidden(object_attributes) {
+        log_hide("NtQueryFullAttributesFile", &original);
+        return STATUS_OBJECT_NAME_NOT_FOUND;
+    }
 
     if let Some((original, redirected)) = try_get_redirect(object_attributes) {
         log_redirect("NtQueryFullAttributesFile", &original, &redirected);
@@ -311,6 +354,15 @@ pub fn nt_create_section_detour(
             };
         }
     };
+
+    // Check if file should be hidden (return "file not found")
+    // Only check if ObjectAttributes contains a path
+    if !object_attributes.is_null() {
+        if let Some(original) = try_get_hidden(object_attributes) {
+            log_hide("NtCreateSection", &original);
+            return STATUS_OBJECT_NAME_NOT_FOUND;
+        }
+    }
 
     // Only redirect if ObjectAttributes contains a path (FileHandle would be NULL/invalid)
     // If FileHandle is provided, the file was already opened via NtCreateFile/NtOpenFile

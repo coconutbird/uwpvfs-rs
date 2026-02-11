@@ -125,6 +125,50 @@ settings/
 - **Cache/temp files**: Avoid interfering with game-generated temporary files
 - **Selective modding**: Ignore files you accidentally copied to the mods folder
 
+## Hiding Files (.vfshide)
+
+You can make game files appear as if they don't exist by creating a `.vfshide` file in your mods folder. When a file matches a pattern in `.vfshide`, the VFS returns "file not found" to the game - effectively hiding the file.
+
+```
+%LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\.vfshide
+```
+
+### Example .vfshide
+
+```gitignore
+# Hide intro videos to skip them
+videos/intro.mp4
+videos/splash.bik
+
+# Hide all logo/branding files
+logos/**
+
+# Hide specific DLC content
+dlc/unwanted_pack.pak
+
+# Hide annoying notification sounds
+sounds/notifications/*.wav
+```
+
+### How It Works
+
+| File         | In Game | In .vfshide | Result                       |
+| ------------ | ------- | ----------- | ---------------------------- |
+| `intro.mp4`  | ✅      | ✅          | **File not found** (hidden)  |
+| `data.pak`   | ✅      | ❌          | Uses original or modded file |
+| `config.ini` | ✅      | ❌          | Uses original or modded file |
+
+### Use Cases
+
+- **Skip intro videos**: Hide splash screens and intro cinematics
+- **Remove unwanted content**: Hide DLC or content you don't want
+- **Disable features**: Hide data files to disable certain game features
+- **Clean installs**: Hide files that conflict with mods
+
+### Pattern Syntax
+
+`.vfshide` uses the same gitignore-style syntax as `.vfsignore`. See the [Supported Patterns](#supported-patterns) section above.
+
 ## Architecture
 
 The project consists of three crates:

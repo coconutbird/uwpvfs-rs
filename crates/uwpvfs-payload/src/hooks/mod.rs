@@ -71,6 +71,24 @@ pub(crate) fn log_redirect(func_name: &str, original_path: &str, redirected_path
     }
 }
 
+/// Log a hidden file (only logs when a file is actually hidden)
+pub(crate) fn log_hide(func_name: &str, original_path: &str) {
+    let config = match VFS_CONFIG.get() {
+        Some(c) if c.log_traffic => c,
+        _ => return,
+    };
+
+    let _ = config;
+
+    let abs_path = path::normalize_to_absolute(original_path);
+
+    if let Some(ipc_mutex) = IPC_CLIENT.get()
+        && let Ok(mut ipc) = ipc_mutex.lock()
+    {
+        ipc.info(&format!("[{}] {} -> HIDDEN", func_name, abs_path));
+    }
+}
+
 /// Install VFS hooks
 pub fn install(
     ipc: IpcClient,
@@ -93,12 +111,23 @@ pub fn install(
         }
     };
 
+    // Load vfshide patterns from mods directory
+    let hide = match crate::vfshide::VfsHide::load(&mods_path_buf) {
+        Ok(hide) => hide,
+        Err(e) => {
+            // Log the error but continue with empty hide set
+            eprintln!("Warning: Failed to load .vfshide: {}", e);
+            crate::vfshide::VfsHide::empty()
+        }
+    };
+
     // Store configuration
     let _ = VFS_CONFIG.set(VfsConfig {
         game_path: PathBuf::from(game_path),
         mods_path: mods_path_buf,
         log_traffic,
         ignore,
+        hide,
     });
 
     // Store IPC client
@@ -114,11 +143,19 @@ pub fn install(
 
     // Log vfsignore status
     if let Some(config) = VFS_CONFIG.get() {
-        let pattern_count = config.ignore.pattern_count();
-        if pattern_count > 0 {
+        let ignore_count = config.ignore.pattern_count();
+        if ignore_count > 0 {
             ipc.info(&format!(
                 "Loaded {} exclusion pattern(s) from .vfsignore",
-                pattern_count
+                ignore_count
+            ));
+        }
+
+        let hide_count = config.hide.pattern_count();
+        if hide_count > 0 {
+            ipc.info(&format!(
+                "Loaded {} hide pattern(s) from .vfshide",
+                hide_count
             ));
         }
     }

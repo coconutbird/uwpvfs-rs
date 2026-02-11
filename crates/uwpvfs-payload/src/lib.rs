@@ -1,7 +1,9 @@
 //! UWPVFS DLL - injected into UWP processes to hook file system operations for modding
 
 mod hooks;
+mod patterns;
 mod uwp;
+pub mod vfshide;
 pub mod vfsignore;
 
 use std::ffi::c_void;
