@@ -67,6 +67,12 @@ pub fn normalize_to_absolute(path: &str) -> String {
         return path.to_string();
     }
 
+    // Skip named object paths (shared memory sections, mutexes, events, etc.)
+    // These start with "Local\" or "Global\" and are not filesystem paths
+    if path_lower.starts_with("local\\") || path_lower.starts_with("global\\") {
+        return path.to_string();
+    }
+
     // Strip NT path prefix if present
     let dos_path = if let Some(stripped) = path.strip_prefix("\\??\\") {
         stripped
@@ -77,9 +83,36 @@ pub fn normalize_to_absolute(path: &str) -> String {
         path
     };
 
+    // Skip empty paths
+    if dos_path.is_empty() {
+        return path.to_string();
+    }
+
+    // Skip Windows reserved device names (CON, NUL, PRN, AUX, CONIN$, CONOUT$, etc.)
+    // These are special device names, not filesystem paths
+    let dos_lower = dos_path.to_lowercase();
+    if matches!(
+        dos_lower.as_str(),
+        "con" | "nul" | "prn" | "aux" | "conin$" | "conout$"
+    ) || dos_lower.starts_with("com")
+        && dos_lower.len() >= 4
+        && dos_lower.chars().nth(3).is_some_and(|c| c.is_ascii_digit())
+        || dos_lower.starts_with("lpt")
+            && dos_lower.len() >= 4
+            && dos_lower.chars().nth(3).is_some_and(|c| c.is_ascii_digit())
+    {
+        return path.to_string();
+    }
+
     // If it's already an absolute path (has drive letter), return it
     if dos_path.len() >= 2 && dos_path.chars().nth(1) == Some(':') {
         return dos_path.to_string();
+    }
+
+    // Skip relative paths without path separators - these are likely named objects
+    // (shared memory sections, mutexes, etc.), not file paths
+    if !dos_path.contains('\\') && !dos_path.contains('/') {
+        return path.to_string();
     }
 
     // It's a relative path - get current directory and prepend it

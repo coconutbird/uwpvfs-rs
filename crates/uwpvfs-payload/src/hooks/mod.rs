@@ -57,9 +57,9 @@ pub(crate) fn log_redirect(func_name: &str, original_path: &str, redirected_path
         _ => return,
     };
 
-    let _ = config;
-
-    let abs_path = path::normalize_to_absolute(original_path);
+    if !config.log_traffic {
+        return;
+    }
 
     if let Some(ipc_mutex) = IPC_CLIENT.get()
         && let Ok(mut ipc) = ipc_mutex.lock()
@@ -67,7 +67,7 @@ pub(crate) fn log_redirect(func_name: &str, original_path: &str, redirected_path
         ipc.info(&format!(
             "[{}] {} -> {}",
             func_name,
-            abs_path,
+            original_path,
             redirected_path.display()
         ));
     }
