@@ -31,7 +31,7 @@ UWP applications (including Xbox Game Pass games) run in a sandboxed environment
 
 1. **Download** the [latest release](https://github.com/coconutbird/uwpvfs-rs/releases/latest) and extract
 2. **Find your game's package name**: `uwpvfs --list`
-3. **Create your mods folder**: `%LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\`
+3. **Create your mods folder**: `%LOCALAPPDATA%\Packages\<PackageFamilyName>\AC\TempState\Mods\`
 4. **Add mod files** that mirror the game's folder structure
 5. **Launch with VFS**: `uwpvfs --package YourGame`
 
@@ -45,6 +45,7 @@ UWP applications (including Xbox Game Pass games) run in a sandboxed environment
 ### Download
 
 Download the zip from [GitHub Releases](https://github.com/coconutbird/uwpvfs-rs/releases/latest) and extract. The zip contains:
+
 - `uwpvfs.exe` - CLI tool
 - `uwpvfs_payload.dll` - Injected DLL (must be in same folder as exe)
 
@@ -110,7 +111,7 @@ Place your mod files in the `TempState\Mods` folder of the UWP app. The folder s
 The mods folder location is:
 
 ```
-%LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\
+%LOCALAPPDATA%\Packages\<PackageFamilyName>\AC\TempState\Mods\
 ```
 
 To find your game's `PackageFamilyName`, run `uwpvfs --list` and look for your game.
@@ -136,7 +137,7 @@ The VFS automatically redirects the game's file access to your modded version.
 Create a `.vfsignore` file in your mods folder to exclude specific files from VFS redirection. Files matching these patterns will be read from/written to their original locations, bypassing the VFS entirely.
 
 ```
-%LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\.vfsignore
+%LOCALAPPDATA%\Packages\<PackageFamilyName>\AC\TempState\Mods\.vfsignore
 ```
 
 ### Example .vfsignore
@@ -175,7 +176,7 @@ data/donotmod.pak
 Create a `.vfshide` file in your mods folder to make game files appear as if they don't exist. When the game tries to access a hidden file, the VFS returns "file not found" - the game thinks the file was never there.
 
 ```
-%LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\.vfshide
+%LOCALAPPDATA%\Packages\<PackageFamilyName>\AC\TempState\Mods\.vfshide
 ```
 
 ### Example .vfshide
