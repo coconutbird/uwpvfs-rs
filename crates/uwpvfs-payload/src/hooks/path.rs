@@ -22,6 +22,15 @@ pub struct VfsConfig {
 /// Check if a path should be hidden (return file not found)
 /// Only hides original game files - if a mod file exists at that path, it won't be hidden
 pub fn should_hide_path(config: &VfsConfig, original_path: &str) -> bool {
+    // Skip named pipe paths
+    if original_path.starts_with("pipe\\")
+        || original_path.starts_with("pipe/")
+        || original_path.contains("\\pipe\\")
+        || original_path.contains("/pipe/")
+    {
+        return false;
+    }
+
     // Normalize to absolute DOS path
     let abs_path = normalize_to_absolute(original_path);
 
@@ -116,6 +125,16 @@ fn get_redirected_path_internal(
     allow_dll: bool,
     for_write: bool,
 ) -> Option<PathBuf> {
+    // Skip named pipe paths (e.g., "pipe\..." or "\\.\pipe\...")
+    // These are IPC mechanisms, not real files
+    if original_path.starts_with("pipe\\")
+        || original_path.starts_with("pipe/")
+        || original_path.contains("\\pipe\\")
+        || original_path.contains("/pipe/")
+    {
+        return None;
+    }
+
     // Normalize to absolute DOS path
     let abs_path = normalize_to_absolute(original_path);
 
@@ -410,6 +429,41 @@ mod tests {
         let result = get_redirected_path(&config, "\\Device\\HarddiskVolume3\\data.pak");
 
         assert!(result.is_none(), "Expected no redirect for device paths");
+    }
+
+    #[test]
+    fn test_get_redirected_path_skips_named_pipes() {
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        // Create a mod file in a "pipe" directory (shouldn't matter)
+        let pipe_dir = mods_path.join("pipe");
+        fs::create_dir_all(&pipe_dir).unwrap();
+        fs::write(pipe_dir.join("NvMessageBus"), "fake").unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
+        };
+
+        // Named pipe paths should be skipped (relative path starting with pipe\)
+        let result = get_redirected_path(&config, "pipe\\NvMessageBus");
+        assert!(result.is_none(), "Expected no redirect for named pipe paths");
+
+        // Also test with forward slash
+        let result = get_redirected_path(&config, "pipe/NvMessageBus");
+        assert!(result.is_none(), "Expected no redirect for named pipe paths (forward slash)");
+
+        // Test path containing \pipe\ in the middle
+        let result = get_redirected_path(&config, "C:\\some\\pipe\\path");
+        assert!(result.is_none(), "Expected no redirect for paths containing \\pipe\\");
     }
 
     #[test]
