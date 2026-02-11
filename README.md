@@ -1,5 +1,10 @@
 # uwpvfs-rs
 
+[![CI](https://github.com/coconutbird/uwpvfs-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/coconutbird/uwpvfs-rs/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://github.com/coconutbird/uwpvfs-rs)
+[![Rust Edition: 2024](https://img.shields.io/badge/Rust-Edition%202024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/)
+
 A Virtual File System (VFS) tool for enabling modding of sandboxed UWP (Universal Windows Platform) applications, such as Xbox Game Pass games on PC.
 
 ## Overview
@@ -24,7 +29,7 @@ UWP applications (including Xbox Game Pass games) run in a sandboxed environment
 
 ## Quick Start
 
-1. **Build** the project: `cargo build --release`
+1. **Download** the [latest release](https://github.com/coconutbird/uwpvfs-rs/releases/latest) and extract
 2. **Find your game's package name**: `uwpvfs --list`
 3. **Create your mods folder**: `%LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\`
 4. **Add mod files** that mirror the game's folder structure
@@ -36,7 +41,12 @@ UWP applications (including Xbox Game Pass games) run in a sandboxed environment
 
 - Windows 10/11
 - Administrator privileges (required for DLL injection)
-- Rust toolchain (2024 edition) - only needed if building from source
+
+### Download
+
+Download the zip from [GitHub Releases](https://github.com/coconutbird/uwpvfs-rs/releases/latest) and extract. The zip contains:
+- `uwpvfs.exe` - CLI tool
+- `uwpvfs_payload.dll` - Injected DLL (must be in same folder as exe)
 
 ### Building from Source
 
@@ -44,10 +54,7 @@ UWP applications (including Xbox Game Pass games) run in a sandboxed environment
 cargo build --release
 ```
 
-The output binaries will be in `target/release/`:
-
-- `uwpvfs.exe` - CLI tool
-- `uwpvfs_payload.dll` - Injected DLL (must be in same folder as exe)
+The output binaries will be in `target/release/`.
 
 ## Usage
 

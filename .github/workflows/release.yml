@@ -57,11 +57,13 @@ jobs:
       - name: Run tests
         run: cargo test --all
 
+      - name: Create zip
+        run: |
+          Compress-Archive -Path target/release/uwpvfs.exe, target/release/uwpvfs_payload.dll -DestinationPath uwpvfs-${{ steps.tag.outputs.tag }}.zip
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          files: |
-            target/release/uwpvfs.exe
-            target/release/uwpvfs_payload.dll
+          files: uwpvfs-${{ steps.tag.outputs.tag }}.zip
           generate_release_notes: true
