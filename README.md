@@ -1,9 +1,9 @@
 # uwpvfs-rs
 
 [![CI](https://github.com/coconutbird/uwpvfs-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/coconutbird/uwpvfs-rs/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/coconutbird/uwpvfs-rs)](https://github.com/coconutbird/uwpvfs-rs/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-blue.svg)](https://github.com/coconutbird/uwpvfs-rs)
-[![Rust Edition: 2024](https://img.shields.io/badge/Rust-Edition%202024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/)
 
 A Virtual File System (VFS) tool for enabling modding of sandboxed UWP (Universal Windows Platform) applications, such as Xbox Game Pass games on PC.
 
