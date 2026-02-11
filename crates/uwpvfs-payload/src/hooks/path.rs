@@ -20,6 +20,7 @@ pub struct VfsConfig {
 }
 
 /// Check if a path should be hidden (return file not found)
+/// Only hides original game files - if a mod file exists at that path, it won't be hidden
 pub fn should_hide_path(config: &VfsConfig, original_path: &str) -> bool {
     // Normalize to absolute DOS path
     let abs_path = normalize_to_absolute(original_path);
@@ -46,7 +47,14 @@ pub fn should_hide_path(config: &VfsConfig, original_path: &str) -> bool {
     let relative = &abs_path[game_path_str.len()..].trim_start_matches('\\');
 
     // Check if relative path matches any hide patterns
-    config.hide.is_hidden(relative)
+    if !config.hide.is_hidden(relative) {
+        return false;
+    }
+
+    // Only hide if there's NO mod file at this path
+    // If a mod file exists, we want to redirect to it instead of hiding
+    let mod_path = config.mods_path.join(relative);
+    !mod_path.exists()
 }
 
 /// Convert a path to absolute DOS path
@@ -161,7 +169,23 @@ fn get_redirected_path_internal(
 
     // For writes, always redirect to mods folder (file will be created)
     // For reads, only redirect if the mod file already exists
-    if for_write || modded_path.exists() {
+    if for_write {
+        // Copy-on-write: if mod file doesn't exist but game file does,
+        // copy the game file to mods folder first. This ensures read+write
+        // operations can read existing content before modifying.
+        if !modded_path.exists() {
+            let game_file = config.game_path.join(relative);
+            if game_file.exists() && game_file.is_file() {
+                // Ensure parent directory exists
+                if let Some(parent) = modded_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                // Copy the file (ignore errors - file will be created fresh if copy fails)
+                let _ = std::fs::copy(&game_file, &modded_path);
+            }
+        }
+        Some(modded_path)
+    } else if modded_path.exists() {
         Some(modded_path)
     } else {
         None
@@ -490,5 +514,217 @@ mod tests {
         let game_log = game_path.join("debug.log");
         let result = get_redirected_path(&config, &game_log.to_string_lossy());
         assert!(result.is_none(), "Expected no redirect for .log file");
+    }
+
+    #[test]
+    fn test_vfshide_only_hides_original_files() {
+        // Create temp directories for game and mods
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        // Create .vfshide that hides intro.mp4
+        let hide = VfsHide::parse("intro.mp4").unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore: VfsIgnore::empty(),
+            hide,
+        };
+
+        // intro.mp4 in game dir should be hidden (no mod replacement)
+        let game_intro = game_path.join("intro.mp4");
+        assert!(
+            should_hide_path(&config, &game_intro.to_string_lossy()),
+            "Expected intro.mp4 to be hidden when no mod file exists"
+        );
+
+        // Now create a mod file that replaces intro.mp4
+        let mod_intro = mods_path.join("intro.mp4");
+        fs::write(&mod_intro, "mod intro").unwrap();
+
+        // intro.mp4 should NOT be hidden anymore (mod file exists)
+        assert!(
+            !should_hide_path(&config, &game_intro.to_string_lossy()),
+            "Expected intro.mp4 to NOT be hidden when mod file exists"
+        );
+    }
+
+    #[test]
+    fn test_vfshide_does_not_hide_outside_game_dir() {
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        let hide = VfsHide::parse("intro.mp4").unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore: VfsIgnore::empty(),
+            hide,
+        };
+
+        // intro.mp4 outside game dir should NOT be hidden
+        let other_intro = temp.path().join("other").join("intro.mp4");
+        assert!(
+            !should_hide_path(&config, &other_intro.to_string_lossy()),
+            "Expected intro.mp4 outside game dir to NOT be hidden"
+        );
+    }
+
+    #[test]
+    fn test_copy_on_write_for_existing_game_file() {
+        // Create temp directories for game and mods
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        // Create a game file (but no mod file)
+        let game_file = game_path.join("save.dat");
+        fs::write(&game_file, "original save data").unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
+        };
+
+        // For read-only, should NOT redirect (no mod file exists)
+        let result = get_redirected_path(&config, &game_file.to_string_lossy());
+        assert!(
+            result.is_none(),
+            "Read-only should not redirect when no mod file"
+        );
+
+        // For write, should redirect AND copy the game file
+        let result = get_redirected_path_ex(&config, &game_file.to_string_lossy(), true);
+        assert!(result.is_some(), "Write should redirect");
+
+        let mod_file = mods_path.join("save.dat");
+        assert!(
+            mod_file.exists(),
+            "Mod file should be created via copy-on-write"
+        );
+
+        // Verify the content was copied
+        let content = fs::read_to_string(&mod_file).unwrap();
+        assert_eq!(
+            content, "original save data",
+            "Content should be copied from game file"
+        );
+    }
+
+    #[test]
+    fn test_copy_on_write_creates_parent_dirs() {
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        // Create a game file in a subdirectory
+        let game_subdir = game_path.join("saves").join("slot1");
+        fs::create_dir_all(&game_subdir).unwrap();
+        let game_file = game_subdir.join("data.sav");
+        fs::write(&game_file, "save slot 1").unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
+        };
+
+        // Write should create parent dirs and copy
+        let result = get_redirected_path_ex(&config, &game_file.to_string_lossy(), true);
+        assert!(result.is_some());
+
+        let mod_file = mods_path.join("saves").join("slot1").join("data.sav");
+        assert!(
+            mod_file.exists(),
+            "Mod file should exist with parent dirs created"
+        );
+        assert_eq!(fs::read_to_string(&mod_file).unwrap(), "save slot 1");
+    }
+
+    #[test]
+    fn test_copy_on_write_skips_if_mod_exists() {
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        // Create both game and mod files with different content
+        let game_file = game_path.join("config.ini");
+        let mod_file = mods_path.join("config.ini");
+        fs::write(&game_file, "original config").unwrap();
+        fs::write(&mod_file, "modded config").unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
+        };
+
+        // Write should redirect to existing mod file without overwriting
+        let result = get_redirected_path_ex(&config, &game_file.to_string_lossy(), true);
+        assert!(result.is_some());
+
+        // Mod file should still have modded content (not overwritten)
+        assert_eq!(fs::read_to_string(&mod_file).unwrap(), "modded config");
+    }
+
+    #[test]
+    fn test_copy_on_write_no_game_file() {
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore: VfsIgnore::empty(),
+            hide: VfsHide::empty(),
+        };
+
+        // Write to a file that doesn't exist in game dir either
+        let new_file = game_path.join("newsave.dat");
+        let result = get_redirected_path_ex(&config, &new_file.to_string_lossy(), true);
+        assert!(
+            result.is_some(),
+            "Should still redirect for new file creation"
+        );
+
+        // Mod file should NOT exist yet (nothing to copy, game will create it)
+        let mod_file = mods_path.join("newsave.dat");
+        assert!(
+            !mod_file.exists(),
+            "No copy should happen when game file doesn't exist"
+        );
     }
 }

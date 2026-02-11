@@ -5,6 +5,7 @@
 //! file exists.
 
 mod detours;
+mod dirtrack;
 mod guard;
 mod ntapi;
 pub mod path;
@@ -19,8 +20,9 @@ use windows::core::{s, w};
 
 use detours::*;
 use ntapi::{
-    LdrLoadDllFn, NtCreateFileFn, NtCreateSectionFn, NtOpenFileFn, NtQueryAttributesFileFn,
-    NtQueryFullAttributesFileFn,
+    LdrLoadDllFn, NtCreateFileFn, NtCreateSectionFn, NtDeleteFileFn, NtOpenFileFn,
+    NtQueryAttributesFileFn, NtQueryDirectoryFileFn, NtQueryFullAttributesFileFn,
+    NtSetInformationFileFn,
 };
 use path::VfsConfig;
 
@@ -96,8 +98,9 @@ pub fn install(
     mods_path: &str,
     log_traffic: bool,
 ) -> Result<u32, HookError> {
-    // Initialize reentrancy guard
+    // Initialize reentrancy guard and directory tracking
     guard::init();
+    dirtrack::init();
 
     // Load vfsignore patterns from mods directory
     let mods_path_buf = PathBuf::from(mods_path);
@@ -253,6 +256,50 @@ pub fn install(
         hooks_installed += 1;
         ipc.info("  ✓ NtCreateSection hooked");
 
+        // NtQueryDirectoryFile - directory enumeration
+        let nt_query_directory_file = GetProcAddress(ntdll, s!("NtQueryDirectoryFile"))
+            .ok_or(HookError::FunctionNotFound("NtQueryDirectoryFile"))?;
+        let nt_query_directory_file: NtQueryDirectoryFileFn =
+            std::mem::transmute(nt_query_directory_file);
+
+        NtQueryDirectoryFileHook
+            .initialize(nt_query_directory_file, nt_query_directory_file_detour)
+            .map_err(|e| HookError::InstallFailed(format!("NtQueryDirectoryFile: {}", e)))?;
+        NtQueryDirectoryFileHook
+            .enable()
+            .map_err(|e| HookError::InstallFailed(format!("NtQueryDirectoryFile enable: {}", e)))?;
+        hooks_installed += 1;
+        ipc.info("  ✓ NtQueryDirectoryFile hooked");
+
+        // NtSetInformationFile - handles rename and delete-on-close
+        let nt_set_information_file = GetProcAddress(ntdll, s!("NtSetInformationFile"))
+            .ok_or(HookError::FunctionNotFound("NtSetInformationFile"))?;
+        let nt_set_information_file: NtSetInformationFileFn =
+            std::mem::transmute(nt_set_information_file);
+
+        NtSetInformationFileHook
+            .initialize(nt_set_information_file, nt_set_information_file_detour)
+            .map_err(|e| HookError::InstallFailed(format!("NtSetInformationFile: {}", e)))?;
+        NtSetInformationFileHook
+            .enable()
+            .map_err(|e| HookError::InstallFailed(format!("NtSetInformationFile enable: {}", e)))?;
+        hooks_installed += 1;
+        ipc.info("  ✓ NtSetInformationFile hooked");
+
+        // NtDeleteFile - deletes file by path
+        let nt_delete_file = GetProcAddress(ntdll, s!("NtDeleteFile"))
+            .ok_or(HookError::FunctionNotFound("NtDeleteFile"))?;
+        let nt_delete_file: NtDeleteFileFn = std::mem::transmute(nt_delete_file);
+
+        NtDeleteFileHook
+            .initialize(nt_delete_file, nt_delete_file_detour)
+            .map_err(|e| HookError::InstallFailed(format!("NtDeleteFile: {}", e)))?;
+        NtDeleteFileHook
+            .enable()
+            .map_err(|e| HookError::InstallFailed(format!("NtDeleteFile enable: {}", e)))?;
+        hooks_installed += 1;
+        ipc.info("  ✓ NtDeleteFile hooked");
+
         ipc.success(&format!(
             "VFS hooks installed successfully ({} hooks)",
             hooks_installed
@@ -276,6 +323,10 @@ pub fn cleanup() {
         let _ = NtQueryAttributesFileHook.disable();
         let _ = NtQueryFullAttributesFileHook.disable();
         let _ = NtCreateSectionHook.disable();
+        let _ = NtQueryDirectoryFileHook.disable();
+        let _ = NtSetInformationFileHook.disable();
+        let _ = NtDeleteFileHook.disable();
     }
+    dirtrack::cleanup();
     guard::cleanup();
 }

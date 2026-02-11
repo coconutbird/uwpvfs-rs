@@ -84,6 +84,34 @@ pub type NtCreateSectionFn = unsafe extern "system" fn(
     FileHandle: HANDLE,
 ) -> NTSTATUS;
 
+/// NtQueryDirectoryFile - Enumerates directory contents
+pub type NtQueryDirectoryFileFn = unsafe extern "system" fn(
+    FileHandle: HANDLE,
+    Event: HANDLE,
+    ApcRoutine: *mut c_void,
+    ApcContext: *mut c_void,
+    IoStatusBlock: PIO_STATUS_BLOCK,
+    FileInformation: *mut c_void,
+    Length: u32,
+    FileInformationClass: u32,
+    ReturnSingleEntry: u8,
+    FileName: *mut UNICODE_STRING,
+    RestartScan: u8,
+) -> NTSTATUS;
+
+/// NtSetInformationFile - Sets file information (rename, delete, etc.)
+pub type NtSetInformationFileFn = unsafe extern "system" fn(
+    FileHandle: HANDLE,
+    IoStatusBlock: PIO_STATUS_BLOCK,
+    FileInformation: *mut c_void,
+    Length: u32,
+    FileInformationClass: u32,
+) -> NTSTATUS;
+
+/// NtDeleteFile - Deletes a file by path
+pub type NtDeleteFileFn =
+    unsafe extern "system" fn(ObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS;
+
 // =============================================================================
 // Structures
 // =============================================================================
@@ -98,6 +126,74 @@ pub struct ObjectAttributes {
     pub security_descriptor: *mut c_void,
     pub security_quality_of_service: *mut c_void,
 }
+
+/// FILE_DIRECTORY_INFORMATION - Directory entry returned by NtQueryDirectoryFile
+/// FileInformationClass = 1 (FileDirectoryInformation)
+#[repr(C)]
+pub struct FileDirectoryInformation {
+    pub next_entry_offset: u32,
+    pub file_index: u32,
+    pub creation_time: i64,
+    pub last_access_time: i64,
+    pub last_write_time: i64,
+    pub change_time: i64,
+    pub end_of_file: i64,
+    pub allocation_size: i64,
+    pub file_attributes: u32,
+    pub file_name_length: u32,
+    // FileName[1] follows - variable length
+}
+
+/// FILE_BOTH_DIR_INFORMATION - Common directory entry format
+/// FileInformationClass = 3 (FileBothDirectoryInformation)
+#[repr(C)]
+pub struct FileBothDirInformation {
+    pub next_entry_offset: u32,
+    pub file_index: u32,
+    pub creation_time: i64,
+    pub last_access_time: i64,
+    pub last_write_time: i64,
+    pub change_time: i64,
+    pub end_of_file: i64,
+    pub allocation_size: i64,
+    pub file_attributes: u32,
+    pub file_name_length: u32,
+    pub ea_size: u32,
+    pub short_name_length: u8,
+    pub _reserved: u8,
+    pub short_name: [u16; 12],
+    // FileName[1] follows - variable length
+}
+
+// FileInformationClass values we care about
+pub const FILE_DIRECTORY_INFORMATION: u32 = 1;
+pub const FILE_BOTH_DIR_INFORMATION: u32 = 3;
+
+// FileInformationClass values for NtSetInformationFile
+#[allow(dead_code)]
+pub const FILE_DISPOSITION_INFORMATION: u32 = 13;
+pub const FILE_RENAME_INFORMATION: u32 = 10;
+
+/// FILE_DISPOSITION_INFORMATION structure for delete operations
+#[repr(C)]
+#[allow(dead_code)]
+pub struct FileDispositionInformation {
+    pub delete_file: u8, // BOOLEAN - non-zero means delete on close
+}
+
+/// FILE_RENAME_INFORMATION structure for rename operations
+/// Note: This is a variable-length structure
+#[repr(C)]
+pub struct FileRenameInformation {
+    pub replace_if_exists: u8,  // BOOLEAN
+    pub root_directory: HANDLE, // Optional root directory handle
+    pub file_name_length: u32,  // Length of FileName in bytes
+                                // FileName[1] follows - variable length WCHAR array
+}
+
+// NTSTATUS codes
+pub const STATUS_SUCCESS: i32 = 0;
+pub const STATUS_NO_MORE_FILES: i32 = 0x80000006_u32 as i32;
 
 // =============================================================================
 // Helper Functions

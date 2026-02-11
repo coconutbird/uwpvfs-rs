@@ -1,28 +1,44 @@
 # uwpvfs-rs
 
-A Virtual File System (VFS) tool for enabling modding of sandboxed UWP (Universal Windows Platform) applications.
+A Virtual File System (VFS) tool for enabling modding of sandboxed UWP (Universal Windows Platform) applications, such as Xbox Game Pass games on PC.
 
 ## Overview
 
-UWP applications run in a sandboxed environment that restricts file access, making traditional modding approaches ineffective. **uwpvfs-rs** solves this by injecting a DLL into UWP processes that hooks low-level NT API file operations, redirecting file access to a mods directory when modded files exist.
+UWP applications (including Xbox Game Pass games) run in a sandboxed environment that restricts file access, making traditional modding approaches ineffective. **uwpvfs-rs** solves this by injecting a DLL into UWP processes that hooks low-level NT API file operations, redirecting file access to a mods directory.
+
+**Key concept:** The mods folder mirrors the game's directory structure. When the game tries to read a file, the VFS checks if a modded version exists and uses it instead. When the game writes a file, the write goes to the mods folder, preserving the original game files.
 
 ## Features
 
 - 🎮 **Launch & Hook** - Launch UWP apps with VFS hooks automatically installed
 - 💉 **Process Injection** - Inject into running UWP processes by name or PID
-- 📁 **File Redirection** - Transparently redirect file access to mods folder
+- 📁 **Read Redirection** - Game reads modded files instead of originals
+- ✏️ **Write Redirection** - Game writes go to mods folder (originals preserved)
+- 📂 **Directory Listing** - Mod files appear when games list folder contents
+- 🔄 **Rename/Delete Support** - File operations properly redirected to mods folder
+- 🚫 **File Exclusion** - `.vfsignore` to exclude specific files from redirection
+- 👻 **File Hiding** - `.vfshide` to make game files appear non-existent
 - 📦 **Package Discovery** - List and search installed UWP packages
 - 📊 **Traffic Logging** - Optional verbose logging of all file/DLL access
 - 🔒 **UWP Compatible** - Proper ACL handling for UWP sandbox access
+
+## Quick Start
+
+1. **Build** the project: `cargo build --release`
+2. **Find your game's package name**: `uwpvfs --list`
+3. **Create your mods folder**: `%LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\`
+4. **Add mod files** that mirror the game's folder structure
+5. **Launch with VFS**: `uwpvfs --package YourGame`
 
 ## Installation
 
 ### Prerequisites
 
-- Windows 10/11 with UWP support
-- Rust toolchain (2024 edition)
+- Windows 10/11
+- Administrator privileges (required for DLL injection)
+- Rust toolchain (2024 edition) - only needed if building from source
 
-### Building
+### Building from Source
 
 ```bash
 cargo build --release
@@ -31,21 +47,24 @@ cargo build --release
 The output binaries will be in `target/release/`:
 
 - `uwpvfs.exe` - CLI tool
-- `uwpvfs_payload.dll` - Injected DLL
+- `uwpvfs_payload.dll` - Injected DLL (must be in same folder as exe)
 
 ## Usage
 
 ### Launch a UWP app with VFS hooks
 
 ```bash
-# Launch by package name
-uwpvfs --package Microsoft.HoganThreshold
+# First, find your game's package name
+uwpvfs --list
 
-# Specify custom mods folder name
-uwpvfs --package Microsoft.HoganThreshold --mods MyModPack
+# Launch by package name (partial match works)
+uwpvfs --package HaloWars
+
+# Specify custom mods folder name (default is "Mods")
+uwpvfs --package HaloWars --mods MyModPack
 ```
 
-### Inject into a running process
+### Inject into an already-running process
 
 ```bash
 # By process name
@@ -58,7 +77,7 @@ uwpvfs --pid 12345
 ### Interactive mode
 
 ```bash
-# Lists all UWP processes and lets you select one
+# Run without arguments to see a list of running UWP processes
 uwpvfs
 ```
 
@@ -71,22 +90,43 @@ uwpvfs --list
 ### Enable verbose traffic logging
 
 ```bash
-uwpvfs --package Microsoft.HoganThreshold --verbose
+# Shows all file access in real-time (useful for debugging)
+uwpvfs --package HaloWars --verbose
 ```
 
-## Mods Folder Location
+## Mods Folder Structure
 
-Place your mod files in the `TempState` folder of the UWP app:
+Place your mod files in the `TempState\Mods` folder of the UWP app. The folder structure must mirror the game's directory structure.
+
+### Finding the Mods Folder
+
+The mods folder location is:
 
 ```
 %LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\
 ```
 
-The VFS will redirect file access from the game directory to this mods folder when a matching file exists.
+To find your game's `PackageFamilyName`, run `uwpvfs --list` and look for your game.
+
+### Example Structure
+
+If the game has a file at:
+
+```
+C:\Program Files\WindowsApps\MyGame_1.0.0.0_x64__abc123\data\textures\player.dds
+```
+
+Your mod file should be at:
+
+```
+%LOCALAPPDATA%\Packages\MyGame_abc123\TempState\Mods\data\textures\player.dds
+```
+
+The VFS automatically redirects the game's file access to your modded version.
 
 ## Excluding Files (.vfsignore)
 
-You can exclude specific files or patterns from VFS redirection by creating a `.vfsignore` file in your mods folder. This uses gitignore-style syntax:
+Create a `.vfsignore` file in your mods folder to exclude specific files from VFS redirection. Files matching these patterns will be read from/written to their original locations, bypassing the VFS entirely.
 
 ```
 %LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\.vfsignore
@@ -95,17 +135,16 @@ You can exclude specific files or patterns from VFS redirection by creating a `.
 ### Example .vfsignore
 
 ```gitignore
-# Don't redirect save files - let the game manage its own saves
-saves/**
-data/saves/
-
-# Don't redirect log files
+# Let the game write logs to its normal location (not captured in mods)
 *.log
 logs/
 
-# Don't redirect config files
-*.ini
-settings/
+# Exclude cache files that the game regenerates
+cache/**
+temp/
+
+# Exclude specific files you don't want to mod
+data/donotmod.pak
 ```
 
 ### Supported Patterns
@@ -120,14 +159,13 @@ settings/
 
 ### Use Cases
 
-- **Save files**: Prevent modded saves from overriding the game's save system
-- **Config files**: Let the game manage its own settings
-- **Cache/temp files**: Avoid interfering with game-generated temporary files
-- **Selective modding**: Ignore files you accidentally copied to the mods folder
+- **Log files**: Let the game write logs to its normal location
+- **Cache files**: Avoid capturing regenerated cache/temp files in mods folder
+- **Selective exclusion**: Exclude specific files you don't want the VFS to touch
 
 ## Hiding Files (.vfshide)
 
-You can make game files appear as if they don't exist by creating a `.vfshide` file in your mods folder. When a file matches a pattern in `.vfshide`, the VFS returns "file not found" to the game - effectively hiding the file.
+Create a `.vfshide` file in your mods folder to make game files appear as if they don't exist. When the game tries to access a hidden file, the VFS returns "file not found" - the game thinks the file was never there.
 
 ```
 %LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\.vfshide
@@ -136,7 +174,7 @@ You can make game files appear as if they don't exist by creating a `.vfshide` f
 ### Example .vfshide
 
 ```gitignore
-# Hide intro videos to skip them
+# Skip intro videos (game will skip them if they "don't exist")
 videos/intro.mp4
 videos/splash.bik
 
@@ -145,25 +183,26 @@ logos/**
 
 # Hide specific DLC content
 dlc/unwanted_pack.pak
-
-# Hide annoying notification sounds
-sounds/notifications/*.wav
 ```
 
 ### How It Works
 
-| File         | In Game | In .vfshide | Result                       |
-| ------------ | ------- | ----------- | ---------------------------- |
-| `intro.mp4`  | ✅      | ✅          | **File not found** (hidden)  |
-| `data.pak`   | ✅      | ❌          | Uses original or modded file |
-| `config.ini` | ✅      | ❌          | Uses original or modded file |
+| File         | In Game | In Mods | In .vfshide | Result                      |
+| ------------ | ------- | ------- | ----------- | --------------------------- |
+| `intro.mp4`  | ✅      | ❌      | ✅          | **File not found** (hidden) |
+| `intro.mp4`  | ✅      | ✅      | ✅          | Uses mod file (replacement) |
+| `data.pak`   | ✅      | ✅      | ❌          | Uses mod file               |
+| `config.ini` | ✅      | ❌      | ❌          | Uses original game file     |
 
 ### Use Cases
 
-- **Skip intro videos**: Hide splash screens and intro cinematics
-- **Remove unwanted content**: Hide DLC or content you don't want
+- **Skip intro videos**: Many games skip intros if the video file is missing
+- **Remove unwanted content**: Hide DLC or content you don't want loaded
 - **Disable features**: Hide data files to disable certain game features
-- **Clean installs**: Hide files that conflict with mods
+
+> **Tip:** To _replace_ a file, you don't need `.vfshide` - just put your replacement in the mods folder. Use `.vfshide` only when you want to remove a file entirely without providing a replacement.
+>
+> **Note:** If a file is listed in `.vfshide` but you also have a mod file at that path, the mod file will be used (not hidden).
 
 ### Pattern Syntax
 
@@ -181,12 +220,37 @@ The project consists of three crates:
 
 ### How it works
 
-1. **CLI** creates shared memory with proper ACLs for UWP access
+1. **CLI** creates shared memory with proper ACLs for UWP sandbox access
 2. **CLI** injects the payload DLL into the target process
-3. **DLL** hooks NT API functions (`NtCreateFile`, `NtOpenFile`, etc.)
-4. **DLL** checks if requested files exist in the mods directory
-5. If mod file exists, the path is redirected; otherwise, original path is used
-6. **IPC** communicates status and logs between CLI and DLL
+3. **DLL** hooks low-level Windows NT API functions (see table below)
+4. When the game accesses a file, the hook checks if a mod version exists
+5. **Reads**: If mod file exists, redirect to it; otherwise use original
+6. **Writes**: Always redirect to mods folder (copy original first if needed)
+7. **IPC** communicates status and logs between CLI and DLL
+
+### Copy-on-Write
+
+When a game opens a file for writing:
+
+- If the mod file already exists → write to it
+- If only the original exists → copy original to mods folder first, then write
+- If neither exists → create new file in mods folder
+
+This preserves original game files while capturing all modifications.
+
+### Hooked NT API Functions
+
+| Function                    | Purpose                                        |
+| --------------------------- | ---------------------------------------------- |
+| `NtCreateFile`              | File creation and opening                      |
+| `NtOpenFile`                | File opening                                   |
+| `NtQueryAttributesFile`     | File existence checks                          |
+| `NtQueryFullAttributesFile` | Extended file attribute queries                |
+| `NtCreateSection`           | Memory-mapped file access                      |
+| `NtQueryDirectoryFile`      | Directory listing (shows mod files in results) |
+| `NtSetInformationFile`      | File rename operations                         |
+| `NtDeleteFile`              | File deletion                                  |
+| `LdrLoadDll`                | DLL loading (logging only)                     |
 
 ## CLI Options
 
