@@ -7,6 +7,7 @@
 mod detours;
 mod dirtrack;
 mod guard;
+mod handlepath;
 mod ntapi;
 pub mod path;
 
@@ -98,9 +99,12 @@ pub fn install(
     mods_path: &str,
     log_traffic: bool,
 ) -> Result<u32, HookError> {
-    // Initialize reentrancy guard and directory tracking
+    // Initialize reentrancy guard, directory tracking, and handle path resolution
     guard::init();
     dirtrack::init();
+    handlepath::init();
+    // Initialize volume mapping using the game path (needed for NT->DOS path conversion)
+    handlepath::init_with_game_path(std::path::Path::new(game_path));
 
     // Load vfsignore patterns from mods directory
     let mods_path_buf = PathBuf::from(mods_path);

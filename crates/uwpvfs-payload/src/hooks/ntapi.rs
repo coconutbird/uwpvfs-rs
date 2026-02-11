@@ -112,6 +112,18 @@ pub type NtSetInformationFileFn = unsafe extern "system" fn(
 pub type NtDeleteFileFn =
     unsafe extern "system" fn(ObjectAttributes: POBJECT_ATTRIBUTES) -> NTSTATUS;
 
+/// NtQueryObject - Queries object information (used to get path from handle)
+pub type NtQueryObjectFn = unsafe extern "system" fn(
+    Handle: HANDLE,
+    ObjectInformationClass: u32,
+    ObjectInformation: *mut c_void,
+    ObjectInformationLength: u32,
+    ReturnLength: *mut u32,
+) -> NTSTATUS;
+
+/// ObjectNameInformation class for NtQueryObject
+pub const OBJECT_NAME_INFORMATION: u32 = 1;
+
 // =============================================================================
 // Structures
 // =============================================================================
@@ -201,6 +213,10 @@ pub const STATUS_NO_MORE_FILES: i32 = 0x80000006_u32 as i32;
 
 /// Extracts the file path from an OBJECT_ATTRIBUTES structure.
 ///
+/// Handles both absolute paths and relative paths with a root_directory handle.
+/// When root_directory is set, resolves the handle to its path and combines
+/// with the relative object_name.
+///
 /// Performs extensive validation to avoid crashes from malformed structures:
 /// - Null pointer checks
 /// - Alignment validation
@@ -262,13 +278,25 @@ pub unsafe fn get_path_from_object_attributes(obj_attr: POBJECT_ATTRIBUTES) -> O
         let s = s.trim_end_matches('\0').to_string();
 
         // Also handle embedded nulls by truncating at the first null
-        let s = if let Some(null_pos) = s.find('\0') {
+        let object_name = if let Some(null_pos) = s.find('\0') {
             s[..null_pos].to_string()
         } else {
             s
         };
 
-        Some(s)
+        // Check if this is a relative path with a root_directory handle
+        if !attr.root_directory.is_invalid() && !attr.root_directory.0.is_null() {
+            // Resolve the root directory handle to its path
+            if let Some(root_path) = super::handlepath::get_path_from_handle(attr.root_directory) {
+                // Combine root path with relative object_name
+                let root_path = root_path.trim_end_matches('\\');
+                let relative = object_name.trim_start_matches('\\');
+                return Some(format!("{}\\{}", root_path, relative));
+            }
+            // If we can't resolve the handle, fall through to return the object_name as-is
+        }
+
+        Some(object_name)
     }
 }
 
