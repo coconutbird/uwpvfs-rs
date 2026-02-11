@@ -165,8 +165,8 @@ impl IpcHost {
             );
 
             // Check if mapping already exists (another session is active)
-            let already_exists =
-                windows::Win32::Foundation::GetLastError() == windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
+            let already_exists = windows::Win32::Foundation::GetLastError()
+                == windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
 
             // Clean up security resources
             let _ = LocalFree(Some(std::mem::transmute::<*mut ACL, HLOCAL>(acl)));
