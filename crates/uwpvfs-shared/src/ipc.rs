@@ -164,12 +164,25 @@ impl IpcHost {
                 PCWSTR(name_wide.as_ptr()),
             );
 
+            // Check if mapping already exists (another session is active)
+            let already_exists =
+                windows::Win32::Foundation::GetLastError() == windows::Win32::Foundation::ERROR_ALREADY_EXISTS;
+
             // Clean up security resources
             let _ = LocalFree(Some(std::mem::transmute::<*mut ACL, HLOCAL>(acl)));
             let _ = LocalFree(Some(std::mem::transmute::<PSID, HLOCAL>(sid_uwp)));
             let _ = LocalFree(Some(std::mem::transmute::<PSID, HLOCAL>(sid_everyone)));
 
             let handle = handle?;
+
+            // If mapping already exists, another uwpvfs session is already active for this process
+            if already_exists {
+                CloseHandle(handle)?;
+                return Err(Error::new(
+                    windows::core::HRESULT(-1),
+                    "Another uwpvfs session is already active for this process. Close the existing session first.",
+                ));
+            }
 
             let view = MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, SHARED_MEMORY_SIZE);
             if view.Value.is_null() {
