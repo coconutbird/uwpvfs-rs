@@ -14,7 +14,7 @@ use super::ntapi::{
     ObjectAttributes, PIO_STATUS_BLOCK, PLARGE_INTEGER, POBJECT_ATTRIBUTES,
     create_redirected_object_attributes, create_unicode_string, get_path_from_object_attributes,
 };
-use super::path::{get_redirected_path, should_hide_path};
+use super::path::{get_redirected_path_ex, should_hide_path};
 use super::{get_config, log_hide, log_redirect};
 
 // =============================================================================
@@ -55,16 +55,39 @@ static_detour! {
 /// NTSTATUS code for "object name not found" (file/directory doesn't exist)
 const STATUS_OBJECT_NAME_NOT_FOUND: NTSTATUS = NTSTATUS(0xC0000034_u32 as i32);
 
+// Access flags indicating write intent
+const GENERIC_WRITE: u32 = 0x40000000;
+const FILE_WRITE_DATA: u32 = 0x0002;
+const FILE_APPEND_DATA: u32 = 0x0004;
+
+/// Check if the desired_access flags indicate write intent
+fn is_write_access(desired_access: u32) -> bool {
+    (desired_access & GENERIC_WRITE) != 0
+        || (desired_access & FILE_WRITE_DATA) != 0
+        || (desired_access & FILE_APPEND_DATA) != 0
+}
+
 // =============================================================================
 // Redirection Helper
 // =============================================================================
 
 /// Attempts to get a redirected path for the given OBJECT_ATTRIBUTES.
-/// Returns None if no redirection should occur.
-fn try_get_redirect(object_attributes: POBJECT_ATTRIBUTES) -> Option<(String, PathBuf)> {
+/// If `for_write` is true, redirects even if mod file doesn't exist and creates parent dirs.
+fn try_get_redirect(
+    object_attributes: POBJECT_ATTRIBUTES,
+    for_write: bool,
+) -> Option<(String, PathBuf)> {
     let config = get_config()?;
     let original_path = unsafe { get_path_from_object_attributes(object_attributes)? };
-    let redirected_path = get_redirected_path(config, &original_path)?;
+    let redirected_path = get_redirected_path_ex(config, &original_path, for_write)?;
+
+    // For writes, ensure parent directory exists
+    if for_write
+        && let Some(parent) = redirected_path.parent()
+    {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
     Some((original_path, redirected_path))
 }
 
@@ -126,7 +149,10 @@ pub fn nt_create_file_detour(
         return STATUS_OBJECT_NAME_NOT_FOUND;
     }
 
-    if let Some((original, redirected)) = try_get_redirect(object_attributes) {
+    // Redirect path (write-aware: creates parent dirs and redirects even if mod file doesn't exist)
+    if let Some((original, redirected)) =
+        try_get_redirect(object_attributes, is_write_access(desired_access))
+    {
         log_redirect("NtCreateFile", &original, &redirected);
 
         let (_buf, mut unicode) = create_unicode_string(&redirected);
@@ -198,7 +224,10 @@ pub fn nt_open_file_detour(
         return STATUS_OBJECT_NAME_NOT_FOUND;
     }
 
-    if let Some((original, redirected)) = try_get_redirect(object_attributes) {
+    // Redirect path (write-aware: creates parent dirs and redirects even if mod file doesn't exist)
+    if let Some((original, redirected)) =
+        try_get_redirect(object_attributes, is_write_access(desired_access))
+    {
         log_redirect("NtOpenFile", &original, &redirected);
 
         let (_buf, mut unicode) = create_unicode_string(&redirected);
@@ -267,7 +296,7 @@ pub fn nt_query_attributes_file_detour(
         return STATUS_OBJECT_NAME_NOT_FOUND;
     }
 
-    if let Some((original, redirected)) = try_get_redirect(object_attributes) {
+    if let Some((original, redirected)) = try_get_redirect(object_attributes, false) {
         log_redirect("NtQueryAttributesFile", &original, &redirected);
 
         let (_buf, mut unicode) = create_unicode_string(&redirected);
@@ -305,7 +334,7 @@ pub fn nt_query_full_attributes_file_detour(
         return STATUS_OBJECT_NAME_NOT_FOUND;
     }
 
-    if let Some((original, redirected)) = try_get_redirect(object_attributes) {
+    if let Some((original, redirected)) = try_get_redirect(object_attributes, false) {
         log_redirect("NtQueryFullAttributesFile", &original, &redirected);
 
         let (_buf, mut unicode) = create_unicode_string(&redirected);
@@ -368,7 +397,7 @@ pub fn nt_create_section_detour(
     // If FileHandle is provided, the file was already opened via NtCreateFile/NtOpenFile
     // which would have done the redirection
     if !object_attributes.is_null()
-        && let Some((original, redirected)) = try_get_redirect(object_attributes)
+        && let Some((original, redirected)) = try_get_redirect(object_attributes, false)
     {
         log_redirect("NtCreateSection", &original, &redirected);
 

@@ -78,16 +78,21 @@ pub fn normalize_to_absolute(path: &str) -> String {
     dos_path.to_string()
 }
 
-/// Check if a path should be redirected and return the redirected path
-pub fn get_redirected_path(config: &VfsConfig, original_path: &str) -> Option<PathBuf> {
-    get_redirected_path_internal(config, original_path, false)
+/// Check if a path should be redirected and return the redirected path.
+/// - `for_write`: If true, redirects even if mod file doesn't exist (for write operations)
+pub fn get_redirected_path_ex(
+    config: &VfsConfig,
+    original_path: &str,
+    for_write: bool,
+) -> Option<PathBuf> {
+    get_redirected_path_internal(config, original_path, false, for_write)
 }
 
-/// Check if a DLL path should be redirected (allows .dll files)
-/// Currently unused - DLL redirection causes crashes due to UWP integrity checks
-#[allow(dead_code)]
-pub fn get_redirected_path_dll(config: &VfsConfig, original_path: &str) -> Option<PathBuf> {
-    get_redirected_path_internal(config, original_path, true)
+/// Check if a path should be redirected (for reads only).
+/// Only redirects if the mod file already exists.
+#[cfg(test)]
+pub fn get_redirected_path(config: &VfsConfig, original_path: &str) -> Option<PathBuf> {
+    get_redirected_path_internal(config, original_path, false, false)
 }
 
 /// Normalize path separators to backslashes and remove trailing slashes
@@ -96,11 +101,12 @@ fn normalize_path_separators(path: &str) -> String {
     normalized.trim_end_matches('\\').to_string()
 }
 
-/// Internal implementation with option to allow DLLs
+/// Internal implementation with options for DLLs and write mode
 fn get_redirected_path_internal(
     config: &VfsConfig,
     original_path: &str,
     allow_dll: bool,
+    for_write: bool,
 ) -> Option<PathBuf> {
     // Normalize to absolute DOS path
     let abs_path = normalize_to_absolute(original_path);
@@ -150,9 +156,12 @@ fn get_redirected_path_internal(
         return None;
     }
 
-    // Check if the modded file exists
+    // Build the modded path
     let modded_path = config.mods_path.join(relative);
-    if modded_path.exists() {
+
+    // For writes, always redirect to mods folder (file will be created)
+    // For reads, only redirect if the mod file already exists
+    if for_write || modded_path.exists() {
         Some(modded_path)
     } else {
         None
