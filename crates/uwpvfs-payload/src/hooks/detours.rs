@@ -357,11 +357,11 @@ pub fn nt_create_section_detour(
 
     // Check if file should be hidden (return "file not found")
     // Only check if ObjectAttributes contains a path
-    if !object_attributes.is_null() {
-        if let Some(original) = try_get_hidden(object_attributes) {
-            log_hide("NtCreateSection", &original);
-            return STATUS_OBJECT_NAME_NOT_FOUND;
-        }
+    if !object_attributes.is_null()
+        && let Some(original) = try_get_hidden(object_attributes)
+    {
+        log_hide("NtCreateSection", &original);
+        return STATUS_OBJECT_NAME_NOT_FOUND;
     }
 
     // Only redirect if ObjectAttributes contains a path (FileHandle would be NULL/invalid)
