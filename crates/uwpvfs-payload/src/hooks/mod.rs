@@ -81,11 +81,24 @@ pub fn install(
     // Initialize reentrancy guard
     guard::init();
 
+    // Load vfsignore patterns from mods directory
+    let mods_path_buf = PathBuf::from(mods_path);
+    let ignore = match crate::vfsignore::VfsIgnore::load(&mods_path_buf) {
+        Ok(ignore) => ignore,
+        Err(e) => {
+            // Log the error but continue with empty ignore set
+            // We'll log this after IPC is set up
+            eprintln!("Warning: Failed to load .vfsignore: {}", e);
+            crate::vfsignore::VfsIgnore::empty()
+        }
+    };
+
     // Store configuration
     let _ = VFS_CONFIG.set(VfsConfig {
         game_path: PathBuf::from(game_path),
-        mods_path: PathBuf::from(mods_path),
+        mods_path: mods_path_buf,
         log_traffic,
+        ignore,
     });
 
     // Store IPC client
@@ -97,6 +110,17 @@ pub fn install(
     ipc.info("Installing NT API hooks...");
     if log_traffic {
         ipc.info("Traffic logging enabled");
+    }
+
+    // Log vfsignore status
+    if let Some(config) = VFS_CONFIG.get() {
+        let pattern_count = config.ignore.pattern_count();
+        if pattern_count > 0 {
+            ipc.info(&format!(
+                "Loaded {} exclusion pattern(s) from .vfsignore",
+                pattern_count
+            ));
+        }
     }
 
     unsafe {

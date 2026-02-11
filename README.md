@@ -84,6 +84,47 @@ Place your mod files in the `TempState` folder of the UWP app:
 
 The VFS will redirect file access from the game directory to this mods folder when a matching file exists.
 
+## Excluding Files (.vfsignore)
+
+You can exclude specific files or patterns from VFS redirection by creating a `.vfsignore` file in your mods folder. This uses gitignore-style syntax:
+
+```
+%LOCALAPPDATA%\Packages\<PackageFamilyName>\TempState\Mods\.vfsignore
+```
+
+### Example .vfsignore
+
+```gitignore
+# Don't redirect save files - let the game manage its own saves
+saves/**
+data/saves/
+
+# Don't redirect log files
+*.log
+logs/
+
+# Don't redirect config files
+*.ini
+settings/
+```
+
+### Supported Patterns
+
+| Pattern        | Description                                   |
+| -------------- | --------------------------------------------- |
+| `*.log`        | Match all `.log` files in any directory       |
+| `saves/`       | Match all files in the `saves` directory      |
+| `saves/**`     | Match all files in `saves` and subdirectories |
+| `data/*.pak`   | Match `.pak` files directly in `data` folder  |
+| `cache/temp/*` | Match files directly in `cache/temp`          |
+
+### Use Cases
+
+- **Save files**: Prevent modded saves from overriding the game's save system
+- **Config files**: Let the game manage its own settings
+- **Cache/temp files**: Avoid interfering with game-generated temporary files
+- **Selective modding**: Ignore files you accidentally copied to the mods folder
+
 ## Architecture
 
 The project consists of three crates:

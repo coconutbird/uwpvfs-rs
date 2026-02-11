@@ -9,6 +9,7 @@ license.workspace = true
 crate-type = ["cdylib"]
 
 [dependencies]
+globset = "0.4.18"
 retour = { workspace = true }
 thiserror = "2.0.18"
 uwpvfs-shared = { workspace = true }

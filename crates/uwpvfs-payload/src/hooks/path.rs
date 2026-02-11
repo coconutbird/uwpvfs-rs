@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::vfsignore::VfsIgnore;
+
 /// VFS configuration for path redirection
 pub struct VfsConfig {
     /// Original game package path (e.g., C:\Program Files\WindowsApps\...)
@@ -10,6 +12,8 @@ pub struct VfsConfig {
     pub mods_path: PathBuf,
     /// Whether to log redirections
     pub log_traffic: bool,
+    /// Ignore patterns loaded from .vfsignore
+    pub ignore: VfsIgnore,
 }
 
 /// Convert a path to absolute DOS path
@@ -108,6 +112,11 @@ fn get_redirected_path_internal(
     };
     let relative = relative.trim_start_matches(['\\', '/']);
 
+    // Check if this path is excluded by .vfsignore
+    if !relative.is_empty() && config.ignore.is_ignored(relative) {
+        return None;
+    }
+
     // Check if the modded file exists
     let modded_path = config.mods_path.join(relative);
     if modded_path.exists() {
@@ -193,6 +202,7 @@ mod tests {
             game_path: game_path.clone(),
             mods_path: mods_path.clone(),
             log_traffic: false,
+            ignore: VfsIgnore::empty(),
         };
 
         // Request for game file should redirect to mod
@@ -217,6 +227,7 @@ mod tests {
             game_path: game_path.clone(),
             mods_path: mods_path.clone(),
             log_traffic: false,
+            ignore: VfsIgnore::empty(),
         };
 
         let game_file = game_path.join("data.pak");
@@ -241,6 +252,7 @@ mod tests {
             game_path: game_path.clone(),
             mods_path: mods_path.clone(),
             log_traffic: false,
+            ignore: VfsIgnore::empty(),
         };
 
         // Path outside game directory should not redirect
@@ -270,6 +282,7 @@ mod tests {
             game_path: game_path.clone(),
             mods_path: mods_path.clone(),
             log_traffic: false,
+            ignore: VfsIgnore::empty(),
         };
 
         let game_dll = game_path.join("plugin.dll");
@@ -295,6 +308,7 @@ mod tests {
             game_path: game_path.clone(),
             mods_path: mods_path.clone(),
             log_traffic: false,
+            ignore: VfsIgnore::empty(),
         };
 
         let game_exe = game_path.join("game.exe");
@@ -316,6 +330,7 @@ mod tests {
             game_path: game_path.clone(),
             mods_path: mods_path.clone(),
             log_traffic: false,
+            ignore: VfsIgnore::empty(),
         };
 
         // Device paths should be skipped
@@ -341,6 +356,7 @@ mod tests {
             game_path: game_path.clone(),
             mods_path: mods_path.clone(),
             log_traffic: false,
+            ignore: VfsIgnore::empty(),
         };
 
         // NT path format should work
@@ -349,5 +365,78 @@ mod tests {
 
         assert!(result.is_some(), "Expected redirect for NT path format");
         assert_eq!(result.unwrap(), mod_file);
+    }
+
+    #[test]
+    fn test_get_redirected_path_respects_vfsignore() {
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        // Create mod files
+        let mod_texture = mods_path.join("textures");
+        fs::create_dir_all(&mod_texture).unwrap();
+        fs::write(mod_texture.join("hero.pak"), "modded texture").unwrap();
+
+        let mod_saves = mods_path.join("saves");
+        fs::create_dir_all(&mod_saves).unwrap();
+        fs::write(mod_saves.join("slot1.sav"), "save data").unwrap();
+
+        // Create .vfsignore that excludes saves
+        let ignore = VfsIgnore::parse("saves/**").unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore,
+        };
+
+        // Texture should be redirected (not ignored)
+        let game_texture = game_path.join("textures\\hero.pak");
+        let result = get_redirected_path(&config, &game_texture.to_string_lossy());
+        assert!(result.is_some(), "Expected redirect for non-ignored file");
+
+        // Save should NOT be redirected (ignored by .vfsignore)
+        let game_save = game_path.join("saves\\slot1.sav");
+        let result = get_redirected_path(&config, &game_save.to_string_lossy());
+        assert!(result.is_none(), "Expected no redirect for ignored file");
+    }
+
+    #[test]
+    fn test_get_redirected_path_vfsignore_wildcard() {
+        let temp = TempDir::new().unwrap();
+        let game_path = temp.path().join("game");
+        let mods_path = temp.path().join("mods");
+
+        fs::create_dir_all(&game_path).unwrap();
+        fs::create_dir_all(&mods_path).unwrap();
+
+        // Create mod files
+        fs::write(mods_path.join("data.pak"), "mod data").unwrap();
+        fs::write(mods_path.join("debug.log"), "log content").unwrap();
+
+        // Create .vfsignore that excludes all .log files
+        let ignore = VfsIgnore::parse("*.log").unwrap();
+
+        let config = VfsConfig {
+            game_path: game_path.clone(),
+            mods_path: mods_path.clone(),
+            log_traffic: false,
+            ignore,
+        };
+
+        // .pak should be redirected
+        let game_pak = game_path.join("data.pak");
+        let result = get_redirected_path(&config, &game_pak.to_string_lossy());
+        assert!(result.is_some(), "Expected redirect for .pak file");
+
+        // .log should NOT be redirected
+        let game_log = game_path.join("debug.log");
+        let result = get_redirected_path(&config, &game_log.to_string_lossy());
+        assert!(result.is_none(), "Expected no redirect for .log file");
     }
 }

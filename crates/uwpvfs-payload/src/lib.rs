@@ -2,6 +2,7 @@
 
 mod hooks;
 mod uwp;
+pub mod vfsignore;
 
 use std::ffi::c_void;
 use std::panic;
